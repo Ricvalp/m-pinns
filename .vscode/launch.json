@@ -1,0 +1,193 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "join checkpoints",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/fit/checkpoints/join_checkpoints_autodecoders.py",
+            // "args": [
+            // ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "NETWORKX_AUTOMATIC_BACKENDS": "networkx",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "make charts autodecoder coil",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/charts/make_charts.py",
+            "args": [
+                "--config=charts/config/make_charts_coil.py",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "NETWORKX_AUTOMATIC_BACKENDS": "networkx",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "fit autoencoder sphere",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/fit/fit_autoencoder.py",
+            "args": [
+                "--config=fit/config/fit_autoencoder_sphere.py",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "NETWORKX_AUTOMATIC_BACKENDS": "networkx",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "train coil diffusion",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/diffusion_single_gpu_autodecoder/main.py",
+            "args": [
+                "--config=pinns/diffusion_single_gpu_autodecoder/configs/coil.py",
+                "--config.autoencoder_checkpoint.step=60000",
+                "--config.mode=train"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "train bunny eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/bunny.py",
+                "--config.autoencoder_checkpoint.step=60000",
+                "--config.mode=train"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "train propeller eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/propeller.py",
+                "--config.autoencoder_checkpoint.step=60000",
+                "--config.mode=train"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "train wave sphere",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/wave/main.py",
+            "args": [
+                "--config=pinns/wave/configs/sphere.py",
+                "--config.autoencoder_checkpoint.step=100",
+                "--config.mode=train"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "eval sphere eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/sphere.py",
+                "--config.eval.checkpoint_dir=pinns/eikonal_autodecoder/sphere/checkpoints/best/p6y0kdub",
+                "--config.eval.use_existing_solution=False",
+                "--config.autoencoder_checkpoint.step=100",
+                "--config.eval.step=89999",
+                "--config.mode=eval"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "generate data sphere eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/sphere.py",
+                "--config.mode=generate_data"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
+        {
+            "name": "generate sphere mesh",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/datasets/sphere/sphere_generator.py",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+        },
+        {
+            "name": "train coil eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/coil.py",
+                "--config.autoencoder_checkpoint.step=60000",
+                "--config.mode=train"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+        },
+        {
+            "name": "make charts coil",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/charts/make_charts.py",
+            "args": [
+                "--config=charts/config/make_charts_coil.py",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
+        },
+        {
+            "name": "eval coil eikonal",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/coil.py",
+                "--config.eval.checkpoint_dir=pinns/eikonal_autodecoder/coil/checkpoints/paspfqsd",
+                "--config.eval.use_existing_solution=False",
+                "--config.eval.step=14999",
+                "--config.mode=eval"
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        }
+    ]
+}
