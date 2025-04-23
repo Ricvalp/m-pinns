@@ -56,24 +56,19 @@ def get_config():
     optim.warmup_steps = 1000
     optim.decay_steps = 10000
 
-
     # Training
     config.training = training = ml_collections.ConfigDict()
     training.max_steps = 200000
     training.batch_size = 1024
 
-
     training.load_existing_batches = True
     training.res_batches_path = "pinns/wave/propeller/data/res_batches.npy"
-    training.boundary_batches_path = (
-        "pinns/wave/propeller/data/boundary_batches.npy"
-    )
+    training.boundary_batches_path = "pinns/wave/propeller/data/boundary_batches.npy"
     training.boundary_pairs_idxs_path = (
         "pinns/wave/propeller/data/boundary_pairs_idxs.npy"
     )
     training.bcs_batches_path = "pinns/wave/propeller/data/bcs_batches.npy"
     training.bcs_values_path = "pinns/wave/propeller/data/bcs_values.npy"
-
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()

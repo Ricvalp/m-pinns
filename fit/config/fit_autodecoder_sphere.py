@@ -79,11 +79,11 @@ def get_config():
     cfg.train.warmup_steps = 20000
     cfg.train.num_steps = 60001
     cfg.train.lr = 1e-5
-    cfg.train.reg_lambda = 2.
+    cfg.train.reg_lambda = 2.0
     cfg.train.weight_decay = 1e-3
     cfg.train.reg_lambda_decay = 0.9999
     cfg.train.reg = "reg+geo"
     cfg.train.noise_scale_riemannian = 0.1
-    cfg.train.lambda_geo_loss = 50.
+    cfg.train.lambda_geo_loss = 50.0
 
     return cfg

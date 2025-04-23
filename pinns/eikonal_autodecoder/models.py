@@ -131,7 +131,7 @@ class Eikonal(MPINN):
         error = error[bcs_charts]
         error = jnp.mean(error)
         return error
-    
+
 
 class EikonalEvaluator(BaseEvaluator):
     def __init__(self, config, model):

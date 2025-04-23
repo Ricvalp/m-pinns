@@ -74,7 +74,7 @@ def main(_):
     for key in charts_to_fit:
 
         if cfg.wandb.use:
-            run =wandb.init(
+            run = wandb.init(
                 project=cfg.wandb.project,
                 entity=cfg.wandb.entity,
                 name=f"{cfg.dataset.name}_autoencoder_{key}",

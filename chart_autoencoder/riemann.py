@@ -225,7 +225,10 @@ def compute_norm_g_ginv_from_params(params, decoder_fn, noise_scale=0.1):
         norm_g_inv,
     )
 
-def compute_norm_g_ginv_from_params_autoencoder(model_fn, decoder_fn, chart, noise_scale=0.1):
+
+def compute_norm_g_ginv_from_params_autoencoder(
+    model_fn, decoder_fn, chart, noise_scale=0.1
+):
 
     rng_key = jax.random.PRNGKey(0)
     _, original_points = model_fn(chart)

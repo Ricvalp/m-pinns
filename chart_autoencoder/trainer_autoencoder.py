@@ -69,7 +69,6 @@ class TrainerAutoEncoder:
         self.init_model()
         self.create_functions()
 
-
     def init_model(self):
         self.states = []
         self.rng, rng = jax.random.split(self.rng)
@@ -86,7 +85,7 @@ class TrainerAutoEncoder:
             n_out=3,
         )
         self.decoder_apply_fn = decoder.apply
-        
+
         model = AutoEncoder(
             n_hidden=self.cfg_model.n_hidden,
             rff_dim=self.cfg_model.rff_dim,
@@ -118,7 +117,7 @@ class TrainerAutoEncoder:
                     riemannian_loss,
                     loss,
                 )
-                
+
         elif self.reg == "reg+geo":
 
             def loss_fn(params, batch, reg_lambda, key):
@@ -126,10 +125,10 @@ class TrainerAutoEncoder:
                 out, z = self.state.apply_fn({"params": params}, points)
                 loss = jnp.sum((out - points) ** 2, axis=-1).mean()
                 riemannian_loss = riemannian_metric_loss(params, points, key)
-                geo_loss = geodesic_preservation_loss(
-                    distances, z
-                )
-                return loss + reg_lambda * (riemannian_loss + self.lambda_geo_loss * geo_loss), (
+                geo_loss = geodesic_preservation_loss(distances, z)
+                return loss + reg_lambda * (
+                    riemannian_loss + self.lambda_geo_loss * geo_loss
+                ), (
                     riemannian_loss,
                     geo_loss,
                     loss,
@@ -156,16 +155,15 @@ class TrainerAutoEncoder:
             out, z = self.state.apply_fn({"params": params}, points)
 
             d = lambda z: self.decoder_apply_fn({"params": params["D"]}, z)
-            noise = (
-                jax.random.normal(key, shape=z.shape)
-                * self.noise_scale_riemannian
-            )
+            noise = jax.random.normal(key, shape=z.shape) * self.noise_scale_riemannian
             z = z + noise
             J = vmap(jax.jacfwd(d))(z)
             J_T = jnp.transpose(J, (0, 2, 1))
             g = jnp.matmul(J_T, J)
             g_inv = jnp.linalg.inv(g)
-            return jnp.mean(jnp.absolute(g)) + self.lambda_g_inv * jnp.mean(jnp.absolute(g_inv))
+            return jnp.mean(jnp.absolute(g)) + self.lambda_g_inv * jnp.mean(
+                jnp.absolute(g_inv)
+            )
 
         def train_step(state, batch, reg_lambda, key):
             my_loss = lambda params: loss_fn(params, batch, reg_lambda, key)
@@ -190,8 +188,12 @@ class TrainerAutoEncoder:
 
                 if step % self.log_charts_every == 0:
 
-                    x = self.state.apply_fn({"params": self.state.params}, self.chart)[1][:, 0]
-                    y = self.state.apply_fn({"params": self.state.params}, self.chart)[1][:, 1]
+                    x = self.state.apply_fn({"params": self.state.params}, self.chart)[
+                        1
+                    ][:, 0]
+                    y = self.state.apply_fn({"params": self.state.params}, self.chart)[
+                        1
+                    ][:, 1]
                     boundaries_x = {}
                     boundaries_y = {}
                     for key in self.boundary_indices.keys():
@@ -223,9 +225,10 @@ class TrainerAutoEncoder:
                             "recon loss": aux[2],
                             "reg_lambda": reg_lambda,
                             "chart_key": self.chart_key,
-                        }, step=step
+                        },
+                        step=step,
                     )
-                
+
                 step += 1
 
             # if (step + 1) % self.save_every == 0:
@@ -244,7 +247,7 @@ class TrainerAutoEncoder:
 
     def model_fn(self, points) -> jnp.ndarray:
         return self.state.apply_fn({"params": self.state.params}, points)
-    
+
     def decoder_fn(self, z) -> jnp.ndarray:
         return self.decoder_apply_fn({"params": self.state.params["D"]}, z)
 
@@ -259,7 +262,6 @@ class ChartsDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.chart[idx], idx, self.distance_matrix[idx]
-
 
 
 def product_of_norms(params):

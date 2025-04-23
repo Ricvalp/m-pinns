@@ -62,18 +62,22 @@ def get_config():
     # Training
     config.training = training = ml_collections.ConfigDict()
     training.max_steps = 500000
-    training.batch_size = 128 # 1024
+    training.batch_size = 128  # 1024
     training.lbfgs_max_steps = 0
 
     training.load_existing_batches = True
-    training.res_batches_path = "pinns/eikonal_autodecoder/propeller/data/res_batches.npy"
+    training.res_batches_path = (
+        "pinns/eikonal_autodecoder/propeller/data/res_batches.npy"
+    )
     training.boundary_batches_path = (
         "pinns/eikonal_autodecoder/propeller/data/boundary_batches.npy"
     )
     training.boundary_pairs_idxs_path = (
         "pinns/eikonal_autodecoder/propeller/data/boundary_pairs_idxs.npy"
     )
-    training.bcs_batches_path = "pinns/eikonal_autodecoder/propeller/data/bcs_batches.npy"
+    training.bcs_batches_path = (
+        "pinns/eikonal_autodecoder/propeller/data/bcs_batches.npy"
+    )
     training.bcs_values_path = "pinns/eikonal_autodecoder/propeller/data/bcs_values.npy"
 
     # Weighting
@@ -90,7 +94,7 @@ def get_config():
     logging.log_every_steps = 10000
     logging.eval_every_steps = 10000
     logging.num_eval_points = 2000
-    
+
     logging.log_errors = False
     logging.log_losses = True
     logging.log_weights = False

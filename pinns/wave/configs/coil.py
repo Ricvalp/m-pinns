@@ -62,21 +62,11 @@ def get_config():
     training.batch_size = 1024
     training.lbfgs_max_steps = 0
 
-    training.res_batches_path = (
-        "pinns/wave/coil/data/res_batches.npy"
-    )
-    training.boundary_batches_path = (
-        "pinns/wave/coil/data/boundary_batches.npy"
-    )
-    training.boundary_pairs_idxs_path = (
-        "pinns/wave/coil/data/boundary_pairs_idxs.npy"
-    )
-    training.ics_batches_path = (
-        "pinns/wave/coil/data/ics_batches.npy"
-    )
-    training.ics_idxs_path = (
-        "pinns/wave/coil/data/ics_idxs.npy"
-    )
+    training.res_batches_path = "pinns/wave/coil/data/res_batches.npy"
+    training.boundary_batches_path = "pinns/wave/coil/data/boundary_batches.npy"
+    training.boundary_pairs_idxs_path = "pinns/wave/coil/data/boundary_pairs_idxs.npy"
+    training.ics_batches_path = "pinns/wave/coil/data/ics_batches.npy"
+    training.ics_idxs_path = "pinns/wave/coil/data/ics_idxs.npy"
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
@@ -104,9 +94,8 @@ def get_config():
 
     # Saving
     config.saving = saving = ml_collections.ConfigDict()
-    saving.checkpoint_dir = (
-        "pinns/wave/coil/checkpoints/"
-        + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    saving.checkpoint_dir = "pinns/wave/coil/checkpoints/" + datetime.now().strftime(
+        "%Y-%m-%d_%H-%M-%S"
     )
     saving.save_every_steps = 5000
     saving.num_keep_ckpts = 10

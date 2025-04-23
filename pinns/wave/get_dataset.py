@@ -47,14 +47,13 @@ def get_dataset(charts_path, sigma=0.1, amplitude=50.0):
         boundaries_x[starting_chart][ending_chart] = starting_chart_points[:, 0]
         boundaries_y[starting_chart][ending_chart] = starting_chart_points[:, 1]
 
-
     # very simple initial conditions
 
     ics = {}
     ics[0] = initial_conditions_spike(x[0], y[0], sigma=sigma, amplitude=amplitude)
     for i in range(1, len(x)):
         ics[i] = initial_conditions_zero(x[i], y[i])
-    
+
     ics_derivative = {}
     ics_derivative[0] = initial_conditions_zero(x[0], y[0])
     for i in range(1, len(x)):

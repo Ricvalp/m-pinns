@@ -57,7 +57,6 @@ def get_config():
     cfg.model.center = 0.5
     cfg.model.init_scale = 1.5
 
-
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # #  Dataset  # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -80,6 +79,6 @@ def get_config():
     cfg.train.reg_lambda_decay = 0.9995
     cfg.train.reg = "reg+geo"
     cfg.train.noise_scale_riemannian = 0.02
-    cfg.train.lambda_geo_loss = 5.
+    cfg.train.lambda_geo_loss = 5.0
     cfg.train.lambda_g_inv = 0.1
     return cfg

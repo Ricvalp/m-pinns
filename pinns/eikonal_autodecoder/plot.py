@@ -3,6 +3,8 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 import open3d as o3d
+import seaborn as sns
+import pandas as pd
 
 
 def plot_domains(x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, name=None):
@@ -205,7 +207,7 @@ def plot_charts_solution(x, y, u_preds, name, vmin=None, vmax=None):
         ax.set_xlabel("x")
         ax.set_ylabel("y")
         scatter = ax.scatter(
-            x[key], y[key], c=u_preds[key], cmap="jet", s=100., vmin=vmin, vmax=vmax
+            x[key], y[key], c=u_preds[key], cmap="jet", s=100.0, vmin=vmin, vmax=vmax
         )
         fig.colorbar(scatter, ax=ax, shrink=0.6)
 
@@ -282,23 +284,194 @@ def plot_3d_solution(pts, sol, angles, name=None, **kwargs):
     plt.close()
 
 
-def plot_correlation(mesh_sol, gt_sol, data=None, name=None):
+# def plot_correlation(mesh_sol, gt_sol, data=None, name=None):
 
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.scatter(mesh_sol, gt_sol, s=5)
+#     fig, ax = plt.subplots(figsize=(5, 5))
+#     ax.scatter(mesh_sol, gt_sol, s=5)
+#     if data is not None:
+#         ax.scatter(data, data, s=25, c="red")
+#     ax.set_xlabel("Mesh Solution")
+#     ax.set_ylabel("Ground Truth Solution")
+#     ax.set_title("Correlation between Mesh and GT Solutions")
+
+#     min_val = min(np.min(mesh_sol), np.min(gt_sol))
+#     max_val = max(np.max(mesh_sol), np.max(gt_sol))
+#     ax.plot([min_val, max_val], [min_val, max_val], "r--", lw=2)
+
+#     if name is not None:
+#         plt.savefig(name)
+#     plt.show()
+
+#     return fig
+
+
+def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_val=40.0):
+    """
+    Generates a correlation plot using seaborn and matplotlib.
+
+    Args:
+        mesh_sol (np.ndarray): Array of mesh solution values.
+        gt_sol (np.ndarray): Array of ground truth solution values.
+        data (np.ndarray, optional): Array of data to plot as a reference line. Defaults to None.
+        name (str, optional): Base name for the saved plot files. Defaults to "correlation_plot".
+
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = (
+        "serif"  # Use a serif font for better readability in papers
+    )
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12  # Increased tick label size
+    plt.rcParams["ytick.labelsize"] = 12  # Increased tick label size
+    plt.rcParams["legend.fontsize"] = 18  # Increased legend font size
+
+    fig, ax = plt.subplots(figsize=(5, 5))  # Adjust figure size for better aspect ratio
+
+    # Use different sizes for the plot but will standardize in the legend
+    pinn_size = 30
+    train_size = 70
+
+    # Plot the main data points
+    sns.scatterplot(
+        x=mesh_sol,
+        y=gt_sol,
+        s=pinn_size,
+        ax=ax,
+        label=r"$\mathcal{M}$-PINN",
+        edgecolor="none",
+    )
+
     if data is not None:
-        ax.scatter(data, data, s=25, c="red")
-    ax.set_xlabel("Mesh Solution")
-    ax.set_ylabel("Ground Truth Solution")
-    ax.set_title("Correlation between Mesh and GT Solutions")
+        sns.scatterplot(
+            x=data,
+            y=data,
+            s=train_size,
+            color="red",
+            marker="o",
+            label="train points",
+            ax=ax,
+            edgecolor="none",
+        )
 
-    # Add a diagonal line for reference
-    min_val = min(np.min(mesh_sol), np.min(gt_sol))
-    max_val = max(np.max(mesh_sol), np.max(gt_sol))
+    ax.set_xlabel("predicted")
+    ax.set_ylabel("ground truth")
+    # ax.set_title("Correlation between Mesh and Ground Truth Solutions")
+
+    min_val = 0.0
+    if max_val is None:
+        max_val = max(np.max(mesh_sol), np.max(gt_sol))
     ax.plot([min_val, max_val], [min_val, max_val], "r--", lw=2)
 
+    # Make legend markers the same size (standardize to a medium size)
+    legend = ax.legend(prop={"size": 18})  # Increased legend size
+    legend_marker_size = 50  # Increased legend marker size
+    for handle in legend.legend_handles:
+        handle._sizes = [legend_marker_size]
+
+    # Fewer ticks with larger size
+    ax.xaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of ticks on x-axis
+    ax.yaxis.set_major_locator(plt.MaxNLocator(5))  # Reduce number of ticks on y-axis
+    ax.tick_params(
+        axis="both", which="major", labelsize=18, width=1.5, length=6
+    )  # Bigger ticks
+
+    # Enable grid for easier visual comparison
+    ax.grid(True, linestyle="--", alpha=0.6, linewidth=1.2)
+
+    # Ensure tight layout to prevent labels from overlapping
+    plt.tight_layout()
+
     if name is not None:
-        plt.savefig(name)
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight")
+        plt.savefig(
+            f"{name}.png", format="png", dpi=300, bbox_inches="tight"
+        )  # Higher DPI for better image quality
+
     plt.show()
 
+    return fig
+
+
+def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
+    """
+    Plots ablation study results from both MPINN and DeltaPINN CSV files, averaging over seeds.
+    
+    Args:
+        mpinn_csv (str): Path to the CSV file containing MPINN results
+        deltapinn_csv (str): Path to the CSV file containing DeltaPINN results
+        name (str, optional): Base name for saving the plot files
+    """
+    # Set style consistent with plot_correlation
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12
+    plt.rcParams["ytick.labelsize"] = 12
+    plt.rcParams["legend.fontsize"] = 18
+
+    # Read and process MPINN data
+    mpinn_df = pd.read_csv(mpinn_csv)
+    mpinn_grouped = mpinn_df.groupby('N').agg({
+        'mpinn_corr': ['mean', 'std'],
+        'mpinn_mse': ['mean', 'std']
+    }).reset_index()
+
+    # Read and process DeltaPINN data
+    deltapinn_df = pd.read_csv(deltapinn_csv)
+    deltapinn_grouped = deltapinn_df.groupby('N').agg({
+        'deltapinn_corr': ['mean', 'std'],
+        'deltapinn_mse': ['mean', 'std']
+    }).reset_index()
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
+
+    # Plot correlation
+    ax1.errorbar(mpinn_grouped['N'], mpinn_grouped['mpinn_corr']['mean'], 
+                yerr=mpinn_grouped['mpinn_corr']['std'],
+                marker='o', markersize=8, capsize=5, capthick=2, 
+                linewidth=2, color='blue', label=r'$\mathcal{M}$-PINN')
+    
+    ax1.errorbar(deltapinn_grouped['N'], deltapinn_grouped['deltapinn_corr']['mean'], 
+                yerr=deltapinn_grouped['deltapinn_corr']['std'],
+                marker='o', markersize=8, capsize=5, capthick=2, 
+                linewidth=2, color='red', label=r'$\Delta$-PINN')
+    
+    ax1.set_xlabel('number of train points')
+    ax1.set_ylabel('correlation')
+    ax1.grid(True, linestyle='--', alpha=0.6, linewidth=1.2)
+
+    # Plot MSE
+    ax2.errorbar(mpinn_grouped['N'], mpinn_grouped['mpinn_mse']['mean'], 
+                yerr=mpinn_grouped['mpinn_mse']['std'],
+                marker='o', markersize=8, capsize=5, capthick=2,
+                linewidth=2, color='blue', label=r'$\mathcal{M}$-PINN')
+    
+    ax2.errorbar(deltapinn_grouped['N'], deltapinn_grouped['deltapinn_mse']['mean'], 
+                yerr=deltapinn_grouped['deltapinn_mse']['std'],
+                marker='o', markersize=8, capsize=5, capthick=2,
+                linewidth=2, color='red', label=r'$\Delta$-PINN')
+    
+    ax2.set_xlabel('number of train points')
+    ax2.set_ylabel('MSE')
+    ax2.grid(True, linestyle='--', alpha=0.6, linewidth=1.2)
+
+    # Adjust ticks and appearance
+    for ax in [ax1, ax2]:
+        ax.tick_params(axis='both', which='major', labelsize=18, width=1.5, length=6)
+        ax.legend(prop={'size': 18})
+
+    plt.tight_layout()
+
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight")
+        plt.savefig(f"{name}.png", format="png", dpi=300, bbox_inches="tight")
+
+    plt.show()
     return fig

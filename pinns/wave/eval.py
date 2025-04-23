@@ -84,7 +84,9 @@ def evaluate(config: ml_collections.ConfigDict):
     for i, u_pred in enumerate(zip(*u_preds)):
         fig, ax = plt.subplots(num_rows, num_cols, figsize=(15, 5 * num_rows))
         plt.suptitle(f"t = {times[i]:.2f}")
-        ax = np.array(ax).reshape(num_rows, num_cols)  # Ensure 2D array even for single subplot
+        ax = np.array(ax).reshape(
+            num_rows, num_cols
+        )  # Ensure 2D array even for single subplot
         for j, u in enumerate(u_pred):
             row = j // num_cols
             col = j % num_cols

@@ -11,7 +11,7 @@ def get_config():
     config.plot = False
 
     config.mode = "train"
-    config.N = 1 # Number of gt points in the training set
+    config.N = 1  # Number of gt points in the training set
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
@@ -47,7 +47,7 @@ def get_config():
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
     optim.grad_accum_steps = 0
-    optim.optimizer = "Adam" #  "AdamWarmupCosineDecay"
+    optim.optimizer = "Adam"  #  "AdamWarmupCosineDecay"
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
@@ -63,7 +63,7 @@ def get_config():
     # Training
     config.training = training = ml_collections.ConfigDict()
     training.max_steps = 100000
-    training.batch_size = 128 # 1024
+    training.batch_size = 128  # 1024
     training.lbfgs_max_steps = 0
 
     training.load_existing_batches = True
@@ -91,7 +91,7 @@ def get_config():
     logging.log_every_steps = 10000
     logging.eval_every_steps = 10000
     logging.num_eval_points = 2000
-    
+
     logging.log_errors = False
     logging.log_losses = True
     logging.log_weights = False
@@ -106,18 +106,14 @@ def get_config():
 
     # Saving
     config.saving = saving = ml_collections.ConfigDict()
-    saving.checkpoint_dir = (
-        "pinns/eikonal_autodecoder/sphere/checkpoints/"
-    )
+    saving.checkpoint_dir = "pinns/eikonal_autodecoder/sphere/checkpoints/"
     saving.save_every_steps = 5000
     saving.num_keep_ckpts = 5
 
     # Eval
     config.eval = eval = ml_collections.ConfigDict()
     eval.eval_with_last_ckpt = False
-    eval.checkpoint_dir = (
-        "pinns/eikonal_autodecoder/sphere/checkpoints/best/6jvovynq"
-    )
+    eval.checkpoint_dir = "pinns/eikonal_autodecoder/sphere/checkpoints/best/6jvovynq"
     eval.step = 179999
     eval.N = 2000
     eval.use_existing_solution = False

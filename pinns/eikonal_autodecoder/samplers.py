@@ -58,7 +58,7 @@ class UniformBCSampler(BaseSampler):
             self.bcs_values = np.load(self.bcs_values_path)
 
             def data_generation():
-                idx = self.rng.integers(0, len(self.bcs_batches_path), size=())
+                idx = self.rng.integers(0, self.bcs_batches.shape[0], size=())
                 return self.bcs_batches[idx], self.bcs_values[idx]
 
         else:

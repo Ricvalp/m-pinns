@@ -70,18 +70,18 @@ def get_config():
     training.uniform_sampler_sigma = 0.02
 
     training.load_existing_batches = True
-    
+
     training.res_batches_path = "pinns/wave/sphere/data/res_batches.npy"
-    training.boundary_batches_path = (
-        "pinns/wave/sphere/data/boundary_batches.npy"
-    )
-    training.boundary_pairs_idxs_path = (
-        "pinns/wave/sphere/data/boundary_pairs_idxs.npy"
-    )
+    training.boundary_batches_path = "pinns/wave/sphere/data/boundary_batches.npy"
+    training.boundary_pairs_idxs_path = "pinns/wave/sphere/data/boundary_pairs_idxs.npy"
     training.ics_batches_path = "pinns/wave/sphere/data/ics_batches.npy"
     training.ics_values_path = "pinns/wave/sphere/data/ics_values.npy"
-    training.ics_derivative_batches_path = "pinns/wave/sphere/data/ics_derivative_batches.npy"
-    training.ics_derivative_values_path = "pinns/wave/sphere/data/ics_derivative_values.npy"
+    training.ics_derivative_batches_path = (
+        "pinns/wave/sphere/data/ics_derivative_batches.npy"
+    )
+    training.ics_derivative_values_path = (
+        "pinns/wave/sphere/data/ics_derivative_values.npy"
+    )
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
@@ -103,9 +103,8 @@ def get_config():
 
     # Saving
     config.saving = saving = ml_collections.ConfigDict()
-    saving.checkpoint_dir = (
-        "pinns/wave/sphere/checkpoints/"
-        + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    saving.checkpoint_dir = "pinns/wave/sphere/checkpoints/" + datetime.now().strftime(
+        "%Y-%m-%d_%H-%M-%S"
     )
     saving.save_every_steps = 5000
     saving.num_keep_ckpts = 5

@@ -288,7 +288,7 @@ def plot_local_charts_2d(
 def plot_html_3d_mesh(vertices, faces, name=None, colors=None, colorscale="Viridis"):
     """
     Plot a 3D mesh with triangles and save it as an HTML file.
-    
+
     Args:
         vertices: numpy array of shape (n_vertices, 3) containing the x, y, z coordinates
         faces: numpy array of shape (n_faces, 3) containing the indices of vertices that form triangles
@@ -298,56 +298,70 @@ def plot_html_3d_mesh(vertices, faces, name=None, colors=None, colorscale="Virid
     """
     x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
     i, j, k = faces[:, 0], faces[:, 1], faces[:, 2]
-    
-    fig = go.Figure(data=[
-        go.Mesh3d(
-            x=x, y=y, z=z,
-            i=i, j=j, k=k,
-            intensity=colors,
-            colorscale=colorscale,
-            opacity=0.8,
-            showscale=colors is not None
-        )
-    ])
-    
+
+    fig = go.Figure(
+        data=[
+            go.Mesh3d(
+                x=x,
+                y=y,
+                z=z,
+                i=i,
+                j=j,
+                k=k,
+                intensity=colors,
+                colorscale=colorscale,
+                opacity=0.8,
+                showscale=colors is not None,
+            )
+        ]
+    )
+
     # Add wireframe to see the edges more clearly
-    fig.add_trace(go.Scatter3d(
-        x=[], y=[], z=[],
-        mode='lines',
-        line=dict(color='black', width=1),
-        showlegend=False
-    ))
-    
+    fig.add_trace(
+        go.Scatter3d(
+            x=[],
+            y=[],
+            z=[],
+            mode="lines",
+            line=dict(color="black", width=1),
+            showlegend=False,
+        )
+    )
+
     # Create lists for wireframe lines
     wireframe_x, wireframe_y, wireframe_z = [], [], []
     for triangle in faces:
         for i in range(3):
             # Get vertex indices for the edge
-            idx1, idx2 = triangle[i], triangle[(i+1)%3]
+            idx1, idx2 = triangle[i], triangle[(i + 1) % 3]
             # Add the vertices of the edge
             wireframe_x.extend([vertices[idx1, 0], vertices[idx2, 0], None])
             wireframe_y.extend([vertices[idx1, 1], vertices[idx2, 1], None])
             wireframe_z.extend([vertices[idx1, 2], vertices[idx2, 2], None])
-    
+
     # Add the wireframe
-    fig.add_trace(go.Scatter3d(
-        x=wireframe_x, y=wireframe_y, z=wireframe_z,
-        mode='lines',
-        line=dict(color='black', width=1),
-        showlegend=False
-    ))
-    
+    fig.add_trace(
+        go.Scatter3d(
+            x=wireframe_x,
+            y=wireframe_y,
+            z=wireframe_z,
+            mode="lines",
+            line=dict(color="black", width=1),
+            showlegend=False,
+        )
+    )
+
     # Set layout
     fig.update_layout(
         scene=dict(
-            aspectmode='data',
+            aspectmode="data",
             xaxis=dict(showgrid=True),
             yaxis=dict(showgrid=True),
-            zaxis=dict(showgrid=True)
+            zaxis=dict(showgrid=True),
         ),
-        margin=dict(l=0, r=0, b=0, t=30)
+        margin=dict(l=0, r=0, b=0, t=30),
     )
-    
+
     if name is not None:
         fig.write_html(name)
     return fig

@@ -19,8 +19,6 @@ from scipy.sparse.linalg import spsolve
 import datasets
 
 
-
-
 class Mesh:
     """Class that contains the mesh where fractal tree is grown. It must be Wavefront .obj file. Be careful on how the normals are defined. It can change where an specified angle will go.
 
@@ -477,7 +475,9 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
             # process=False prevents trimesh from automatically 'fixing' or merging vertices
             # which might be undesirable initially if your OBJ is simple points/triangles.
             mesh = trimesh.load_mesh(input_obj_file, process=False)
-            print(f"Initial mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+            print(
+                f"Initial mesh: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+            )
 
             # Ensure it's a triangular mesh (trimesh usually handles this on load)
             if not mesh.is_watertight:
@@ -496,7 +496,9 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
             for i in range(subdivision_iterations):
                 # mesh.subdivide() performs one iteration of midpoint subdivision
                 mesh = mesh.subdivide()
-                print(f"Iteration {i+1}: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces")
+                print(
+                    f"Iteration {i+1}: {len(mesh.vertices)} vertices, {len(mesh.faces)} faces"
+                )
 
             print("\nSubdivision complete.")
 
@@ -510,24 +512,20 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
                 print(f"Error exporting mesh: {e}")
 
 
-
-
-
-
 # def densify_mesh(verts, connectivity, levels=1):
 #     """Densify a mesh by adding vertices at the midpoints of each edge and creating new triangles.
-    
+
 #     This function implements a Loop-like subdivision scheme for a triangular mesh.
 #     For each triangle, it creates 3 new vertices at the midpoints of the triangle's edges
 #     and creates 4 new triangles: one in the center and 3 connecting to the original vertices.
-    
+
 #     Args:
 #         verts (np.ndarray): Array of vertices with shape (N, 3) where each row is a 3D point
 #         connectivity (np.ndarray): Array of triangle indices with shape (M, 3) where each row contains
 #                                   the indices of 3 vertices that form a triangle
 #         levels (int, optional): Number of subdivision iterations to perform. Defaults to 1.
 #                                Each level increases mesh density by approximately 4x.
-    
+
 #     Returns:
 #         tuple: (new_verts, new_connectivity) where:
 #             - new_verts is an array of vertices with shape (N + added_vertices, 3)
@@ -535,14 +533,14 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
 #     """
 #     verts = np.array(verts)
 #     connectivity = np.array(connectivity)
-    
+
 #     new_verts = verts.copy()
 #     new_connectivity = connectivity.copy()
-    
+
 #     # Apply the subdivision the specified number of times
 #     for _ in range(levels):
 #         new_verts, new_connectivity = _densify_mesh_once(new_verts, new_connectivity)
-    
+
 #     return new_verts, new_connectivity
 
 # def _densify_mesh_once(verts, connectivity):
@@ -550,23 +548,23 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
 #     # Dictionary to store edge midpoints
 #     # Key: tuple of sorted vertex indices forming an edge, Value: index of midpoint vertex
 #     edge_to_midpoint = {}
-    
+
 #     # New arrays to build
 #     new_verts = verts.copy()
 #     new_connectivity = []
-    
+
 #     # For each triangle
 #     for triangle in connectivity:
 #         v0, v1, v2 = triangle
-        
+
 #         # Create or get indices for the three new midpoint vertices
 #         midpoint_indices = []
-        
+
 #         # For each edge in the triangle
 #         for i, j in [(v0, v1), (v1, v2), (v2, v0)]:
 #             # Create a unique edge key (sorted to ensure the same edge from different triangles is recognized)
 #             edge = tuple(sorted([i, j]))
-            
+
 #             # If we haven't processed this edge yet
 #             if edge not in edge_to_midpoint:
 #                 # Create a new vertex at the midpoint of the edge
@@ -574,19 +572,19 @@ def densify_mesh(input_obj_file, output_obj_file, subdivision_iterations=1):
 #                 midpoint_idx = len(new_verts)
 #                 new_verts = np.vstack((new_verts, midpoint))
 #                 edge_to_midpoint[edge] = midpoint_idx
-            
+
 #             midpoint_indices.append(edge_to_midpoint[edge])
-        
+
 #         # Get indices of the midpoints for clarity
 #         m01, m12, m20 = midpoint_indices
-        
+
 #         # Create four new triangles
 #         # Central triangle (connecting all midpoints)
 #         new_connectivity.append([m01, m12, m20])
-        
+
 #         # Three triangles connecting original vertices with midpoints
 #         new_connectivity.append([v0, m01, m20])
 #         new_connectivity.append([v1, m12, m01])
 #         new_connectivity.append([v2, m20, m12])
-    
+
 #     return new_verts, np.array(new_connectivity)

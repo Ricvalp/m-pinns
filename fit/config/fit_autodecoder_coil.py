@@ -84,6 +84,6 @@ def get_config():
     cfg.train.reg_lambda_decay = 0.9999
     cfg.train.reg = "reg+geo"
     cfg.train.noise_scale_riemannian = 0.1
-    cfg.train.lambda_geo_loss = 20.
+    cfg.train.lambda_geo_loss = 20.0
 
     return cfg

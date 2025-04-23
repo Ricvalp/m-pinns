@@ -21,7 +21,9 @@ class BaseSampler(Dataset):
 
 
 class UniformICSampler(BaseSampler):
-    def __init__(self, x, y, u0, batch_size, load_existing_batches=False, ics_path=None):
+    def __init__(
+        self, x, y, u0, batch_size, load_existing_batches=False, ics_path=None
+    ):
         super().__init__(batch_size)
         self.x = [np.array(x[key]) for key in sorted(x.keys())]
         self.y = [np.array(y[key]) for key in sorted(y.keys())]
@@ -29,11 +31,10 @@ class UniformICSampler(BaseSampler):
 
         if load_existing_batches and ics_path is not None:
             self.ics_batches_path, self.ics_values_path = ics_path
-            
+
         else:
             self.ics_batches_path = None
             self.ics_values_path = None
-
 
         self.create_data_generation()
 
@@ -103,7 +104,13 @@ class UniformSampler(BaseSampler):
 
 class UniformBoundarySampler(BaseSampler):
     def __init__(
-        self, boundaries_x, boundaries_y, T, batch_size, load_existing_batches=False, boundary_batches_paths=None
+        self,
+        boundaries_x,
+        boundaries_y,
+        T,
+        batch_size,
+        load_existing_batches=False,
+        boundary_batches_paths=None,
     ):
         super().__init__(batch_size)
         self.boundary_x = boundaries_x

@@ -48,7 +48,7 @@ def main(_):
     chart_in_mesh_indices, mesh_in_chart_indices = find_verts_in_charts(charts, verts)
 
     save_charts(
-        charts_path=cfg.dataset.charts_path, 
+        charts_path=cfg.dataset.charts_path,
         charts=charts,
         charts_idxs=charts_idxs,
         boundaries=boundaries,
@@ -56,11 +56,11 @@ def main(_):
         chart_in_mesh_indices=chart_in_mesh_indices,
         mesh_in_chart_indices=mesh_in_chart_indices,
         verts=verts,
-        connectivity=connectivity
+        connectivity=connectivity,
     )
 
     logging.info(f"Got {len(charts)} charts. Saved charts to {cfg.dataset.charts_path}")
-    
+
     plot_html_3d_charts(
         charts=charts,
         sampled_points=sampled_points,

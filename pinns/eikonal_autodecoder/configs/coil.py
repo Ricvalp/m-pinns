@@ -10,10 +10,18 @@ def get_config():
 
     config.figure_path = "./figures/" + str(datetime.now().strftime("%Y%m%d-%H%M%S"))
 
+    # Plotting the charts at the beginning of the training
     config.plot = False
 
+    # Input shape for initializing Flax models
+    config.input_dim = 2
+
+    # Integer for PRNG random seed.
+    config.seed = 42
+
     config.mode = "train"
-    config.N = 5
+    config.N = 100
+    config.idxs = [3461, 4175, 4865, 5338, 5731, 6239, 1333, 6886, 7580, 3094, 8521, 2245, 9640, 9831, 2678, 11078, 11210]
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
@@ -23,10 +31,8 @@ def get_config():
     # Weights & Biases
     config.wandb = wandb = ml_collections.ConfigDict()
     wandb.project = "PINN-Eikonal-Coil"
-    # wandb.name = "default"
+    wandb.name = "default"
     wandb.tag = None
-    wandb.log_every_steps = 100
-    wandb.eval_every_steps = 100
     wandb.entity = "ricvalp"
 
     # Arch
@@ -42,33 +48,35 @@ def get_config():
     # )
 
     arch.fourier_emb = ml_collections.ConfigDict({"embed_scale": 1, "embed_dim": 32})
-    arch.reparam = ml_collections.ConfigDict(
-        {"type": "weight_fact", "mean": 0.5, "stddev": 0.1}
-    )
+    # arch.reparam = ml_collections.ConfigDict(
+    #     {"type": "weight_fact", "mean": 0.5, "stddev": 0.1}
+    # )
 
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
     optim.grad_accum_steps = 0
-    optim.optimizer = "AdamWarmupCosineDecay"  #
+    optim.optimizer ="Adam" # "AdamWarmupCosineDecay"  #
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
-    optim.learning_rate = 1e-2
+    optim.learning_rate = 1e-3
     optim.lbfgs_learning_rate = 0.00001
     optim.decay_rate = 0.9
     optim.decay_steps = 2000
 
     # cosine decay
-    optim.warmup_steps = 1000
-    optim.decay_steps = 40000
+    optim.warmup_steps = 5000
+    optim.decay_steps = 50000
 
     # Training
     config.training = training = ml_collections.ConfigDict()
-    training.max_steps = 40000
-    training.batch_size = 128
+    training.max_steps = 20000
+    training.batch_size = 1024
     training.lbfgs_max_steps = 0
 
     training.load_existing_batches = True
+    training.batches_path = "pinns/eikonal_autodecoder/coil/data/"
+
     training.res_batches_path = "pinns/eikonal_autodecoder/coil/data/res_batches.npy"
     training.boundary_batches_path = (
         "pinns/eikonal_autodecoder/coil/data/boundary_batches.npy"
@@ -79,29 +87,21 @@ def get_config():
     training.bcs_batches_path = "pinns/eikonal_autodecoder/coil/data/bcs_batches.npy"
     training.bcs_values_path = "pinns/eikonal_autodecoder/coil/data/bcs_values.npy"
 
+
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
     weighting.scheme = "grad_norm"
     weighting.init_weights = ml_collections.ConfigDict(
         {"bcs": 1.0, "res": 1.0, "bc": 1.0}
     )
-    weighting.momentum = 0.9
-    weighting.update_every_steps = 200
-
+    weighting.momentum = 0.99
+    weighting.update_every_steps = 100
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()
-    logging.log_every_steps = 1000
-    logging.eval_every_steps = 1000
-    logging.num_eval_points = 8000
-
-
-    # logging.log_errors = False
-    # logging.log_losses = True
-    # logging.log_weights = False
-    # logging.log_preds = False
-    # logging.log_grads = False
-    # logging.log_ntk = False
+    logging.num_eval_points = 10000
+    logging.log_every_steps = 100
+    logging.eval_every_steps = 100
 
     # config.profiler = profiler = ml_collections.ConfigDict()
     # profiler.start_step = 200
@@ -114,24 +114,19 @@ def get_config():
         "pinns/eikonal_autodecoder/coil/checkpoints/"
         + datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     )
-    saving.save_every_steps = 5000
-    saving.num_keep_ckpts = 10
+    saving.save_every_steps = 50000
+    saving.num_keep_ckpts = 2
+    saving.csv_path = "pinns/eikonal_autodecoder/coil/ablation.csv"
 
     # Eval
     config.eval = eval = ml_collections.ConfigDict()
     eval.eval_with_last_ckpt = False
-    eval.checkpoint_dir = (
-        "pinns/eikonal_autodecoder/coil/checkpoints/2layers_0.001lr_40000decaysteps"
-    )
+    eval.checkpoint_dir = "pinns/eikonal_autodecoder/coil/checkpoints/"
     eval.step = 9999
     eval.N = 11769
     eval.use_existing_solution = False
     eval.solution_path = "pinns/eikonal_autodecoder/coil/eval"
 
-    # Input shape for initializing Flax models
-    config.input_dim = 2
-
-    # Integer for PRNG random seed.
-    config.seed = 42
+    eval.plot_everything = False
 
     return config

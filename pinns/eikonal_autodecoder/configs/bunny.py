@@ -95,7 +95,7 @@ def get_config():
     logging.log_every_steps = 10000
     logging.eval_every_steps = 100
     logging.num_eval_points = 2000
-    
+
     logging.log_errors = False
     logging.log_losses = True
     logging.log_weights = False
@@ -120,9 +120,7 @@ def get_config():
     # Eval
     config.eval = eval = ml_collections.ConfigDict()
     eval.eval_with_last_ckpt = False
-    eval.checkpoint_dir = (
-        "pinns/eikonal_autodecoder/bunny/checkpoints/4layers_0.001lr_10000decaysteps_tanhactivation"
-    )
+    eval.checkpoint_dir = "pinns/eikonal_autodecoder/bunny/checkpoints/4layers_0.001lr_10000decaysteps_tanhactivation"
     eval.step = 9999
     eval.N = 1000
     eval.use_existing_solution = False

@@ -104,7 +104,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             name=Path(config.figure_path) / "combined_3d_with_metric.png",
         )
 
-
     ics_sampler = iter(
         UniformICSampler(
             x=x,
@@ -115,7 +114,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             ics_path=(
                 config.training.ics_batches_path,
                 config.training.ics_values_path,
-            )
+            ),
         )
     )
 
@@ -129,7 +128,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             ics_path=(
                 config.training.ics_derivative_batches_path,
                 config.training.ics_derivative_values_path,
-            )
+            ),
         )
     )
 
@@ -171,7 +170,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
         set_profiler(config.profiler, step, config.profiler.log_dir)
 
-        batch = next(res_sampler), next(boundary_sampler), next(ics_sampler), next(ics_derivative_sampler)
+        batch = (
+            next(res_sampler),
+            next(boundary_sampler),
+            next(ics_sampler),
+            next(ics_derivative_sampler),
+        )
         loss, model.state = model.step(model.state, batch)
 
         if step % config.wandb.log_every_steps == 0:
@@ -180,18 +184,21 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         if config.weighting.scheme in ["grad_norm", "ntk"]:
             if step % config.weighting.update_every_steps == 0:
                 model.state = model.update_weights(model.state, batch)
-        
+
         if step % config.wandb.eval_every_steps == 0:
             losses, _ = model.eval(model.state, batch)
-            wandb.log({
-                "ics_loss": losses["ics"],
-                "bc_loss": losses["bc"],
-                "ics_derivative_loss": losses["ics_derivative"],
-                "res_loss": losses["res"],
-                "ics_weight": model.state.weights['ics'],
-                "ics_derivative_weight": model.state.weights['ics_derivative'],
-                "res_weight": model.state.weights['res'],
-                }, step)
+            wandb.log(
+                {
+                    "ics_loss": losses["ics"],
+                    "bc_loss": losses["bc"],
+                    "ics_derivative_loss": losses["ics_derivative"],
+                    "res_loss": losses["res"],
+                    "ics_weight": model.state.weights["ics"],
+                    "ics_derivative_weight": model.state.weights["ics_derivative"],
+                    "res_weight": model.state.weights["res"],
+                },
+                step,
+            )
 
         if config.saving.save_every_steps is not None:
             if (step + 1) % config.saving.save_every_steps == 0 or (

@@ -57,7 +57,12 @@ def main(_):
         name=Path(cfg.figure_path) / f"{cfg.dataset.name}_refined_charts.png",
     )
 
-    reindexed_charts, reindexed_idxs, reindexed_boundaries, reindexed_boundary_indices = reindex_charts(
+    (
+        reindexed_charts,
+        reindexed_idxs,
+        reindexed_boundaries,
+        reindexed_boundary_indices,
+    ) = reindex_charts(
         old_charts=charts,
         old_idxs=charts_idxs,
         key_chart_to_refine=chart_to_refine,

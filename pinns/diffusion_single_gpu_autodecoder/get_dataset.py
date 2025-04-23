@@ -14,9 +14,13 @@ def initial_conditions_zero(x, y):
 
 def get_dataset(charts_path, sigma=0.1):
 
-    loaded_charts3d, loaded_charts_idxs, loaded_boundaries, loaded_boundary_indices, loaded_charts2d = (
-        load_charts(charts_path)
-    )
+    (
+        loaded_charts3d,
+        loaded_charts_idxs,
+        loaded_boundaries,
+        loaded_boundary_indices,
+        loaded_charts2d,
+    ) = load_charts(charts_path)
 
     x = {}
     y = {}

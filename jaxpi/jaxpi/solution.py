@@ -32,16 +32,20 @@ def load_solution(solution_path):
     pts = data["pts"]
     sol = data["sol"]
     u_preds = data["u_preds"]
-    return pts, sol, u_preds
+    mesh_sol = data["mesh_sol"]
+    gt_sol = data["gt_sol"]
+    return pts, sol, u_preds, mesh_sol, gt_sol
 
 
-def save_solution(solution_path, pts, sol, u_preds):
+def save_solution(solution_path, pts, sol, u_preds, mesh_sol, gt_sol):
     np.save(
         solution_path,
         {
             "pts": pts,
             "sol": sol,
             "u_preds": u_preds,
+            "mesh_sol": mesh_sol,
+            "gt_sol": gt_sol,
         },
         allow_pickle=True,
     )

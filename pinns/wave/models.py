@@ -10,9 +10,7 @@ from jaxpi.models import MPINN
 
 
 class Wave(MPINN):
-    def __init__(
-        self, config, inv_metric_tensor, sqrt_det_g, d_params, num_charts
-    ):
+    def __init__(self, config, inv_metric_tensor, sqrt_det_g, d_params, num_charts):
         super().__init__(config, num_charts=num_charts)
 
         self.sqrt_det_g = sqrt_det_g
@@ -31,7 +29,7 @@ class Wave(MPINN):
         @partial(vmap, in_axes=(0, 0, 0, 0))
         def compute_derivative_ics_loss(params, x, y, derivative_ics):
             u_t = lambda x, y, t: grad(self.u_net, argnums=3)(params, x, y, t)
-            u_t_pred = vmap(u_t, (0, 0, None))(x, y, 0.0)            
+            u_t_pred = vmap(u_t, (0, 0, None))(x, y, 0.0)
             return jnp.mean((u_t_pred - derivative_ics) ** 2)
 
         @partial(vmap, in_axes=(0, 0, 0))
@@ -71,7 +69,6 @@ class Wave(MPINN):
         self.compute_res_loss = compute_res_loss
         self.compute_boundary_loss = compute_boundary_loss
 
-
     def u_net(self, params, x, y, t):
         z = jnp.stack([x, y, t])
         u = self.state.apply_fn(params, z)
@@ -83,7 +80,7 @@ class Wave(MPINN):
 
     def sqrt_det_g_net(self, d_params, x, y):
         p = jnp.stack([x, y])[None, :]
-        return self.sqrt_det_g(d_params, p)[0] 
+        return self.sqrt_det_g(d_params, p)[0]
 
     def laplacian_net(self, params, d_params, x, y, t):
         F1 = lambda x, y, t: self.sqrt_det_g_net(d_params, x, y) * (
@@ -118,7 +115,10 @@ class Wave(MPINN):
         ics_loss = jnp.mean(ics_loss)
 
         ics_derivative_input_points, ics_derivative_values = ics_derivative_batches
-        x, y = ics_derivative_input_points[:, :, 0], ics_derivative_input_points[:, :, 1]
+        x, y = (
+            ics_derivative_input_points[:, :, 0],
+            ics_derivative_input_points[:, :, 1],
+        )
         ics_derivative_loss = self.compute_derivative_ics_loss(
             params, x, y, ics_derivative_values
         )
@@ -132,7 +132,12 @@ class Wave(MPINN):
         )
         boundary_loss = jnp.mean(boundary_loss)
 
-        loss_dict = {"ics": ics_loss, "res": res_loss, "bc": boundary_loss, "ics_derivative": ics_derivative_loss}
+        loss_dict = {
+            "ics": ics_loss,
+            "res": res_loss,
+            "bc": boundary_loss,
+            "ics_derivative": ics_derivative_loss,
+        }
 
         return loss_dict
 
@@ -142,6 +147,7 @@ class Wave(MPINN):
         # error = jnp.linalg.norm(u_pred - u_test) / jnp.linalg.norm(u_test)
         # return error
         return None
+
 
 class DiffusionEvaluator(BaseEvaluator):
     def __init__(self, config, model):

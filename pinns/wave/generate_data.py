@@ -45,7 +45,6 @@ def generate_data(config: ml_collections.ConfigDict):
             batch_size=config.training.batch_size,
             load_existing_batches=False,
             ics_path=config.training.ics_derivative_batches_path,
-
         )
     )
 
@@ -83,7 +82,12 @@ def generate_data(config: ml_collections.ConfigDict):
 
     for step in tqdm(range(1, 100001), desc="Generating batches"):
 
-        batch = next(res_sampler), next(boundary_sampler), next(ics_sampler), next(ics_derivative_sampler)
+        batch = (
+            next(res_sampler),
+            next(boundary_sampler),
+            next(ics_sampler),
+            next(ics_derivative_sampler),
+        )
         res_batches.append(batch[0])
         boundary_batches.append(batch[1][0])
         boundary_pairs_idxs.append(batch[1][1])
@@ -103,9 +107,14 @@ def generate_data(config: ml_collections.ConfigDict):
             np.save(config.training.boundary_batches_path, boundary_batches_arrey)
             np.save(config.training.boundary_pairs_idxs_path, boundary_pairs_idxs_arrey)
             np.save(config.training.ics_batches_path, ics_batches_arrey)
-            np.save(config.training.ics_derivative_batches_path, ics_derivative_batches_arrey)
+            np.save(
+                config.training.ics_derivative_batches_path,
+                ics_derivative_batches_arrey,
+            )
             np.save(config.training.ics_values_path, ics_values_arrey)
-            np.save(config.training.ics_derivative_values_path, ics_derivative_values_arrey)
+            np.save(
+                config.training.ics_derivative_values_path, ics_derivative_values_arrey
+            )
             print("Size of res_batches in MB: ", res_batches_arrey.nbytes / 1024 / 1024)
             print(
                 "Size of boundary_batches in MB: ",
@@ -116,4 +125,7 @@ def generate_data(config: ml_collections.ConfigDict):
                 boundary_pairs_idxs_arrey.nbytes / 1024 / 1024,
             )
             print("Size of ics_batches in MB: ", ics_batches_arrey.nbytes / 1024 / 1024)
-            print("Size of ics_derivative_batches in MB: ", ics_derivative_batches_arrey.nbytes / 1024 / 1024)
+            print(
+                "Size of ics_derivative_batches in MB: ",
+                ics_derivative_batches_arrey.nbytes / 1024 / 1024,
+            )

@@ -138,7 +138,9 @@ class TrainerAutoDecoder:
                 geo_loss = geodesic_preservation_loss(
                     self.distances_matrix, params["points"]
                 )
-                return loss + reg_lambda * (riemannian_loss + self.lambda_geo_loss * geo_loss), (
+                return loss + reg_lambda * (
+                    riemannian_loss + self.lambda_geo_loss * geo_loss
+                ), (
                     riemannian_loss,
                     geo_loss,
                     loss,
@@ -286,7 +288,8 @@ class TrainerAutoDecoder:
                         "recon loss": aux[2],
                         "reg_lambda": reg_lambda,
                         "chart_key": self.chart_key,
-                    }, step=step
+                    },
+                    step=step,
                 )
             if (step + 1) % self.save_every == 0:
                 self.save_model(step=step - 1)

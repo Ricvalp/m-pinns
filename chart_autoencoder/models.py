@@ -47,12 +47,15 @@ class Encoder(nn.Module):
     n_latent: int
     rff_dim: int = 128  # dimension for RFF embedding
     init_scale: float = 1.5
+
     def setup(self):
         self.rff = RFFEmbedding(3, self.rff_dim)
         self.dense1 = nn.Dense(self.n_hidden)
         self.dense2 = nn.Dense(self.n_hidden)
         self.dense3 = nn.Dense(self.n_latent)
-        self.scale = self.param("scale", lambda key, shape: jnp.ones(shape) * self.init_scale, ())
+        self.scale = self.param(
+            "scale", lambda key, shape: jnp.ones(shape) * self.init_scale, ()
+        )
 
     def __call__(self, x):
         x = self.rff(x)
@@ -93,8 +96,11 @@ class AutoEncoder(nn.Module):
     n_hidden: int
     rff_dim: int = 128
     init_scale: float = 1.5
+
     def setup(self):
-        self.encoder = Encoder(self.n_hidden, 2, self.rff_dim, self.init_scale, name="E")
+        self.encoder = Encoder(
+            self.n_hidden, 2, self.rff_dim, self.init_scale, name="E"
+        )
         self.decoder = Decoder(self.n_hidden, 3, self.rff_dim, name="D")
 
     def __call__(self, x):

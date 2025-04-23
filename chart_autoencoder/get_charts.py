@@ -354,7 +354,6 @@ def load_charts(
     with open(charts_path + "/boundaries.pkl", "rb") as f:
         loaded_boundaries = pickle.load(f)
 
-
     with open(charts_path + "/boundary_indices.pkl", "rb") as f:
         loaded_boundary_indices = pickle.load(f)
     with open(charts_path + "/charts_idxs.pkl", "rb") as f:
@@ -411,25 +410,27 @@ def save_charts(
 
     with open(charts_path + "/charts_idxs.pkl", "wb") as f:
         pickle.dump(charts_idxs, f)
-    
+
     if verts is not None:
         with open(charts_path + "/verts.pkl", "wb") as f:
             pickle.dump(verts, f)
-            
+
     if connectivity is not None:
         with open(charts_path + "/connectivity.pkl", "wb") as f:
             pickle.dump(connectivity, f)
-    
+
     if chart_in_mesh_indices is not None:
         with open(charts_path + "/chart_in_mesh_indices.pkl", "wb") as f:
             pickle.dump(chart_in_mesh_indices, f)
-            
+
     if mesh_in_chart_indices is not None:
         with open(charts_path + "/mesh_in_chart_indices.pkl", "wb") as f:
             pickle.dump(mesh_in_chart_indices, f)
 
 
-def get_charts(points: jnp.ndarray, charts_config: Dict[str, Any], verts: jnp.ndarray = None) -> List[jnp.ndarray]:
+def get_charts(
+    points: jnp.ndarray, charts_config: Dict[str, Any], verts: jnp.ndarray = None
+) -> List[jnp.ndarray]:
     """
     Returns the charts from point cloud data
 
@@ -468,37 +469,40 @@ def find_intersection_indices(points1, points2, tolerance=1e-8):
     """
     # Build KDTree for efficient nearest neighbor search
     tree2 = KDTree(points2)
-    
+
     # Find matches within tolerance
     intersection_indices_12 = []
     intersection_indices_21 = []
 
-    
     # For each point in points1, find all points in points2 within the tolerance radius
     for i, point in enumerate(points1):
         # Query the KDTree to find all points within tolerance
         indices = tree2.query_ball_point(point, tolerance)
-                
+
         # If we found matching points
         if indices:
             for idx in indices:
                 intersection_indices_21.append(i)
                 intersection_indices_12.append(idx)
-    
+
     # logging.info(f"Found {len(intersection_indices_12)} intersection points between arrays of shapes {points1.shape} and {points2.shape}")
 
     return np.array(intersection_indices_12), np.array(intersection_indices_21)
 
 
-def find_verts_in_charts(charts: List[jnp.ndarray], verts: jnp.ndarray) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
+def find_verts_in_charts(
+    charts: List[jnp.ndarray], verts: jnp.ndarray
+) -> Tuple[Dict[int, List[int]], Dict[int, List[int]]]:
     """
     Find the indices of the vertices in the charts
     """
-    
+
     mesh_in_chart_indices = {}
     chart_in_mesh_indices = {}
     for key in charts.keys():
-        chart_in_mesh_indices[key], mesh_in_chart_indices[key] = find_intersection_indices(charts[key], verts)
+        chart_in_mesh_indices[key], mesh_in_chart_indices[key] = (
+            find_intersection_indices(charts[key], verts)
+        )
 
     return chart_in_mesh_indices, mesh_in_chart_indices
 
@@ -507,10 +511,8 @@ def find_closest_points_to_mesh(mesh_pts: jnp.ndarray, pts: jnp.ndarray) -> List
     """
     Find the indices of the closest points in the mesh to the points in the charts
     """
-    
+
     tree = KDTree(pts)
     distances, closest_indices = tree.query(mesh_pts, k=1)
 
     return distances, closest_indices
-
-

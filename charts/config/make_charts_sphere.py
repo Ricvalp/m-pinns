@@ -30,7 +30,7 @@ def get_config():
     cfg.dataset.seed = 37
     cfg.dataset.name = "Sphere"
     cfg.dataset.path = "./datasets/sphere/sphere_r4_d5.obj"
-    cfg.dataset.scale = 1.
+    cfg.dataset.scale = 1.0
     cfg.dataset.points_per_unit_area = 3
     cfg.dataset.subset_cardinality = 150000
     cfg.dataset.charts_path = "./datasets/sphere/charts"
@@ -42,7 +42,7 @@ def get_config():
 
     cfg.charts = ConfigDict()
     cfg.charts.alg = "fast_region_growing"
-    cfg.charts.min_dist = 7.
+    cfg.charts.min_dist = 7.0
     cfg.charts.nearest_neighbors = 10
 
     return cfg

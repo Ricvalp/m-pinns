@@ -31,8 +31,6 @@ def main(_):
     Path(cfg.figure_path).mkdir(parents=True, exist_ok=True)
     Path(cfg.profiler.log_dir).mkdir(parents=True, exist_ok=True)
 
-
-
     charts, charts_idxs, boundaries, boundary_indices, charts2d = load_charts(
         charts_path=cfg.dataset.charts_path,
     )
@@ -61,8 +59,7 @@ def main(_):
     charts_to_fit = (
         cfg.charts_to_fit if cfg.charts_to_fit is not None else charts.keys()
     )
-    
-    
+
     chart_loaders = {
         key: DataLoader(
             dataset=ChartsDataset(charts[key], distance_matrix[key]),
@@ -70,16 +67,16 @@ def main(_):
             shuffle=True,
             num_workers=8,
             collate_fn=numpy_collate_with_distances,
-        ) for key in charts_to_fit
+        )
+        for key in charts_to_fit
     }
-    
-    
+
     recon_charts = {}
     latent_charts = {}
     for key in charts_to_fit:
 
         if cfg.wandb.use:
-            run =wandb.init(
+            run = wandb.init(
                 project=cfg.wandb.project,
                 entity=cfg.wandb.entity,
                 name=f"{cfg.dataset.name}_autoencoder_{key}",
@@ -162,11 +159,9 @@ def main(_):
         name=Path(cfg.figure_path) / f"post_{cfg.dataset.name}_latent_charts.png",
     )
 
-
     with open(f"{cfg.dataset.charts_path}/charts2d.pkl", "wb") as f:
         pickle.dump(latent_charts, f)
     print(f"Saved chart points to {cfg.dataset.charts_path}/charts2d.pkl")
-
 
 
 def load_cfgs(

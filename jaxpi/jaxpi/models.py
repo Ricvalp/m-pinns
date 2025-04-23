@@ -169,7 +169,7 @@ class MPINN:
 
     def compute_diag_ntk(self, params, batch, *args):
         raise NotImplementedError("Subclasses should implement this!")
-    
+
     def compute_l2_error(self, params, eval_x, eval_y, u_eval):
         raise NotImplementedError("Subclasses should implement this!")
 
@@ -232,13 +232,15 @@ class MPINN:
             )
             state = state.apply_lbfgs_gradients(grads=grads)
             return loss, state
-        
+
         def eval(state, batch, eval_x=None, eval_y=None, u_eval=None, bcs_charts=None):
             losses = self.losses(state.params, batch)
-            eval_loss = self.compute_l2_error(state.params, eval_x, eval_y, u_eval, bcs_charts)
-            
+            eval_loss = self.compute_l2_error(
+                state.params, eval_x, eval_y, u_eval, bcs_charts
+            )
+
             return losses, eval_loss
-            
+
         self.update_weights = jax.jit(update_weights)
         self.step = jax.jit(step)
         self.lbfgs_step = jax.jit(lbfgs_step)
