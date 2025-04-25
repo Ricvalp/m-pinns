@@ -119,7 +119,7 @@ def generate_deformed_disk_rbf_single(key, n_points, radius, n_control_points, d
 # Note: kernel_func is static *within* rbf_deformation_jax, but here it's treated
 # like any other constant argument passed to each vmapped call.
 batched_generate_disks = jax.vmap(
-     ,
+    generate_deformed_disk_rbf_single,
     in_axes=(0, None, None, None, None, None, None, None, None)
     # Axis specifications for arguments:
     # key: 0 (map over keys)
@@ -133,6 +133,76 @@ batched_generate_disks = jax.vmap(
 )
 
 
+# --- Dataset Class for Training Autoencoders ---
+class DeformedDiskDataset:
+    """Dataset class that generates batches of deformed disks on-the-fly for training autoencoders.
+    
+    Each batch contains newly generated disks, ensuring variety during training.
+    """
+    def __init__(self, 
+                 seed=42,
+                 num_points=5000, 
+                 disk_radius=1.0, 
+                 num_control=10, 
+                 deform_scale=0.5, 
+                 kernel_func=thin_plate_spline_kernel, 
+                 kernel_epsilon=2.5, 
+                 control_point_range=1.5, 
+                 rbf_regularization=1e-7):
+        """Initialize the dataset with parameters for disk generation.
+        
+        Args:
+            seed: Initial random seed
+            num_points: Number of points per disk
+            disk_radius: Radius of the original disk
+            num_control: Number of control points for RBF deformation
+            deform_scale: Scale of deformation
+            kernel_func: RBF kernel function to use
+            kernel_epsilon: Kernel shape parameter
+            control_point_range: Range for control point placement
+            rbf_regularization: Regularization parameter for RBF
+        """
+        self.main_key = random.PRNGKey(seed)
+        self.num_points = num_points
+        self.disk_radius = disk_radius
+        self.num_control = num_control
+        self.deform_scale = deform_scale
+        self.kernel_func = kernel_func
+        self.kernel_epsilon = kernel_epsilon
+        self.control_point_range = control_point_range
+        self.rbf_regularization = rbf_regularization
+    
+    def get_batch(self, batch_size):
+        """Generate a new batch of deformed disks.
+        
+        Args:
+            batch_size: Number of disks to generate
+            
+        Returns:
+            JAX array of shape (batch_size, num_points, 3)
+        """
+        # Update the key for the next batch (ensures different disks each time)
+        self.main_key, subkey = random.split(self.main_key)
+        
+        # Generate a batch of keys, one for each disk
+        keys = random.split(subkey, batch_size)
+        
+        # Generate the batch of deformed disks
+        disks_batch = batched_generate_disks(
+            keys,
+            self.num_points,
+            self.disk_radius,
+            self.num_control,
+            self.deform_scale,
+            self.kernel_func,
+            self.kernel_epsilon,
+            self.control_point_range,
+            self.rbf_regularization
+        )
+        
+        return disks_batch
+
+
 # --- Main Execution ---
 if __name__ == "__main__":
     # --- Parameters ---
@@ -142,10 +212,37 @@ if __name__ == "__main__":
     disk_radius = 1.0
     num_control = 10        # Control points per disk
     deform_scale = 0.5     # Max displacement scale
-    rbf_kernel = gaussian_kernel # Choose kernel
+    rbf_kernel = thin_plate_spline_kernel # Choose kernel
     kernel_epsilon = 2.5    # Kernel shape parameter
     rbf_regularization = 1e-7 # Regularization
 
+    # --- Test Dataset Class ---
+    print("Testing DeformedDiskDataset class...")
+    dataset = DeformedDiskDataset(
+        seed=seed,
+        num_points=num_points,
+        disk_radius=disk_radius,
+        num_control=num_control,
+        deform_scale=deform_scale,
+        kernel_func=rbf_kernel,
+        kernel_epsilon=kernel_epsilon,
+        rbf_regularization=rbf_regularization
+    )
+    
+    # Time batch generation using the dataset class
+    start_time = time.time()
+    batch1 = dataset.get_batch(batch_size).block_until_ready()
+    end_time = time.time()
+    print(f"Dataset batch generation took {end_time - start_time:.4f} seconds")
+    print(f"Batch shape: {batch1.shape}")
+    
+    # Generate a second batch to verify we get different data
+    batch2 = dataset.get_batch(batch_size)
+    
+    # Check if batches are different (they should be)
+    batch_diff = jnp.abs(batch1 - batch2).mean()
+    print(f"Mean difference between consecutive batches: {batch_diff:.6f}")
+    
     # --- Generation ---
     main_key = random.PRNGKey(seed)
 
@@ -213,7 +310,7 @@ if __name__ == "__main__":
         ))
 
     # Update layout
-    max_coord = disk_radius + deform_scale * 1.5
+    max_coord = disk_radius + deform_scale * 3.
     fig.update_layout(
         title=f'Batched JAX RBF Deformation (First {num_disks_to_plot} Disks)',
         scene=dict(
