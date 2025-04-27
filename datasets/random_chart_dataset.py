@@ -141,7 +141,8 @@ class DeformedDiskDataset:
     """
     def __init__(self, 
                  seed=42,
-                 num_points=5000, 
+                 num_points=5000,
+                 batch_size=128,
                  disk_radius=1.0, 
                  num_control=10, 
                  deform_scale=0.5, 
@@ -164,6 +165,7 @@ class DeformedDiskDataset:
         """
         self.main_key = random.PRNGKey(seed)
         self.num_points = num_points
+        self.batch_size = batch_size
         self.disk_radius = disk_radius
         self.num_control = num_control
         self.deform_scale = deform_scale
@@ -172,7 +174,7 @@ class DeformedDiskDataset:
         self.control_point_range = control_point_range
         self.rbf_regularization = rbf_regularization
     
-    def get_batch(self, batch_size):
+    def get_batch(self):
         """Generate a new batch of deformed disks.
         
         Args:
@@ -185,7 +187,7 @@ class DeformedDiskDataset:
         self.main_key, subkey = random.split(self.main_key)
         
         # Generate a batch of keys, one for each disk
-        keys = random.split(subkey, batch_size)
+        keys = random.split(subkey, self.batch_size)
         
         # Generate the batch of deformed disks
         disks_batch = batched_generate_disks(

@@ -7,8 +7,6 @@ from pathlib import Path
 from torch.utils import data
 import logging
 import os
-from copy import copy, deepcopy
-import igl
 
 import trimesh
 import os

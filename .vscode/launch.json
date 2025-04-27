@@ -188,6 +188,18 @@
                 "PYTHONPATH": "${workspaceFolder}",
                 "JAX_DISABLE_JIT": "False",
             },
+        },
+        {
+            "name": "fit universal autoencoder",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/fit/fit_universal_autoencoder.py",
+            "args": [
+                "--config=fit/config/fit_universal_autoencoder.py",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
         }
     ]
 }

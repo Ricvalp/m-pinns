@@ -22,7 +22,7 @@ from chart_autoencoder import (
 
 
 _TASK_FILE = config_flags.DEFINE_config_file(
-    "config", default="fit/config/fit_autencoder_sphere-+.py"
+    "config", default="fit/config/fit_autencoder.py"
 )
 
 
