@@ -400,7 +400,7 @@ def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_va
 def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
     """
     Plots ablation study results from both MPINN and DeltaPINN CSV files, averaging over seeds.
-    
+
     Args:
         mpinn_csv (str): Path to the CSV file containing MPINN results
         deltapinn_csv (str): Path to the CSV file containing DeltaPINN results
@@ -418,54 +418,88 @@ def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
 
     # Read and process MPINN data
     mpinn_df = pd.read_csv(mpinn_csv)
-    mpinn_grouped = mpinn_df.groupby('N').agg({
-        'mpinn_corr': ['mean', 'std'],
-        'mpinn_mse': ['mean', 'std']
-    }).reset_index()
+    mpinn_grouped = (
+        mpinn_df.groupby("N")
+        .agg({"mpinn_corr": ["mean", "std"], "mpinn_mse": ["mean", "std"]})
+        .reset_index()
+    )
 
     # Read and process DeltaPINN data
     deltapinn_df = pd.read_csv(deltapinn_csv)
-    deltapinn_grouped = deltapinn_df.groupby('N').agg({
-        'deltapinn_corr': ['mean', 'std'],
-        'deltapinn_mse': ['mean', 'std']
-    }).reset_index()
+    deltapinn_grouped = (
+        deltapinn_df.groupby("N")
+        .agg({"deltapinn_corr": ["mean", "std"], "deltapinn_mse": ["mean", "std"]})
+        .reset_index()
+    )
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 5))
 
     # Plot correlation
-    ax1.errorbar(mpinn_grouped['N'], mpinn_grouped['mpinn_corr']['mean'], 
-                yerr=mpinn_grouped['mpinn_corr']['std'],
-                marker='o', markersize=8, capsize=5, capthick=2, 
-                linewidth=2, color='blue', label=r'$\mathcal{M}$-PINN')
-    
-    ax1.errorbar(deltapinn_grouped['N'], deltapinn_grouped['deltapinn_corr']['mean'], 
-                yerr=deltapinn_grouped['deltapinn_corr']['std'],
-                marker='o', markersize=8, capsize=5, capthick=2, 
-                linewidth=2, color='red', label=r'$\Delta$-PINN')
-    
-    ax1.set_xlabel('number of train points')
-    ax1.set_ylabel('correlation')
-    ax1.grid(True, linestyle='--', alpha=0.6, linewidth=1.2)
+    ax1.errorbar(
+        mpinn_grouped["N"],
+        mpinn_grouped["mpinn_corr"]["mean"],
+        yerr=mpinn_grouped["mpinn_corr"]["std"],
+        marker="o",
+        markersize=8,
+        capsize=5,
+        capthick=2,
+        linewidth=2,
+        color="blue",
+        label=r"$\mathcal{M}$-PINN",
+    )
+
+    ax1.errorbar(
+        deltapinn_grouped["N"],
+        deltapinn_grouped["deltapinn_corr"]["mean"],
+        yerr=deltapinn_grouped["deltapinn_corr"]["std"],
+        marker="o",
+        markersize=8,
+        capsize=5,
+        capthick=2,
+        linewidth=2,
+        color="red",
+        label=r"$\Delta$-PINN",
+    )
+
+    ax1.set_xlabel("number of train points")
+    ax1.set_ylabel("correlation")
+    ax1.grid(True, linestyle="--", alpha=0.6, linewidth=1.2)
 
     # Plot MSE
-    ax2.errorbar(mpinn_grouped['N'], mpinn_grouped['mpinn_mse']['mean'], 
-                yerr=mpinn_grouped['mpinn_mse']['std'],
-                marker='o', markersize=8, capsize=5, capthick=2,
-                linewidth=2, color='blue', label=r'$\mathcal{M}$-PINN')
-    
-    ax2.errorbar(deltapinn_grouped['N'], deltapinn_grouped['deltapinn_mse']['mean'], 
-                yerr=deltapinn_grouped['deltapinn_mse']['std'],
-                marker='o', markersize=8, capsize=5, capthick=2,
-                linewidth=2, color='red', label=r'$\Delta$-PINN')
-    
-    ax2.set_xlabel('number of train points')
-    ax2.set_ylabel('MSE')
-    ax2.grid(True, linestyle='--', alpha=0.6, linewidth=1.2)
+    ax2.errorbar(
+        mpinn_grouped["N"],
+        mpinn_grouped["mpinn_mse"]["mean"],
+        yerr=mpinn_grouped["mpinn_mse"]["std"],
+        marker="o",
+        markersize=8,
+        capsize=5,
+        capthick=2,
+        linewidth=2,
+        color="blue",
+        label=r"$\mathcal{M}$-PINN",
+    )
+
+    ax2.errorbar(
+        deltapinn_grouped["N"],
+        deltapinn_grouped["deltapinn_mse"]["mean"],
+        yerr=deltapinn_grouped["deltapinn_mse"]["std"],
+        marker="o",
+        markersize=8,
+        capsize=5,
+        capthick=2,
+        linewidth=2,
+        color="red",
+        label=r"$\Delta$-PINN",
+    )
+
+    ax2.set_xlabel("number of train points")
+    ax2.set_ylabel("MSE")
+    ax2.grid(True, linestyle="--", alpha=0.6, linewidth=1.2)
 
     # Adjust ticks and appearance
     for ax in [ax1, ax2]:
-        ax.tick_params(axis='both', which='major', labelsize=18, width=1.5, length=6)
-        ax.legend(prop={'size': 18})
+        ax.tick_params(axis="both", which="major", labelsize=18, width=1.5, length=6)
+        ax.legend(prop={"size": 18})
 
     plt.tight_layout()
 

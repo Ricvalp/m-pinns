@@ -1,248 +1,348 @@
+import math
+from typing import Any, Callable, Dict, Sequence, Union
+
+from ml_collections import ConfigDict
+
 import jax
 import jax.numpy as jnp
-import flax.linen as nn
-from typing import Sequence, Callable, Optional, Any, Tuple
+import numpy as np
+from flax import linen as nn
+from jax import dtypes, random
+from jax._src.typing import Array
+from jax.nn.initializers import Initializer
+
+KeyArray = Array
 
 
-class FilmLayer(nn.Module):
-    """Feature-wise Linear Modulation (FiLM) layer.
-    
-    Applies affine transformation to input features based on conditioning information.
-    Each feature dimension is modulated separately with a scale and shift.
-    """
-    features: int
-    use_bias: bool = True
-    
+class MLP(nn.Module):
+    """Simple MLP with custom activation function."""
+
+    layer_sizes: Sequence[int]
+    activation: Callable[[Array], Array] = nn.relu
+
     @nn.compact
-    def __call__(self, x, condition):
-        """
-        Args:
-            x: Input tensor of shape (..., features)
-            condition: Conditioning tensor of shape (batch_size, cond_dim)
-            
-        Returns:
-            Modulated tensor of shape (..., features)
-        """
-        # Project condition to get scales and shifts
-        film_params = nn.Dense(features=2 * self.features, use_bias=self.use_bias)(condition)
-        
-        # Split into scales and shifts
-        scales, shifts = jnp.split(film_params, 2, axis=-1)
-        
-        # Add extra dimensions for broadcasting correctly
-        # If x is (batch, ..., features), condition is (batch, cond_dim)
-        # Then scales and shifts need to be (batch, 1, ..., features)
-        for _ in range(x.ndim - condition.ndim):
-            scales = scales[:, None, ...]
-            shifts = shifts[:, None, ...]
-        
-        # Apply modulation: x * scales + shifts
-        return x * (scales + 1.0) + shifts
+    def __call__(self, x: Array) -> Array:
+        for i, size in enumerate(self.layer_sizes[:-1]):
+            x = nn.Dense(
+                size,
+                kernel_init=jax.nn.initializers.truncated_normal(
+                    1 / jnp.sqrt(x.shape[-1])
+                ),
+                bias_init=jax.nn.initializers.zeros,
+                name=f"mlp_linear_{i}",
+            )(x)
+            x = self.activation(x)
+        return nn.Dense(
+            self.layer_sizes[-1],
+            kernel_init=jax.nn.initializers.truncated_normal(1 / jnp.sqrt(x.shape[-1])),
+            bias_init=jax.nn.initializers.zeros,
+            name=f"mlp_linear_{len(self.layer_sizes) - 1}",
+        )(x)
+
+
+class PosEmb(nn.Module):
+    embedding_dim: int
+    freq: float
+
+    @nn.compact
+    def __call__(self, coords):
+        emb = nn.Dense(
+            self.embedding_dim // 2,
+            kernel_init=nn.initializers.normal(self.freq),
+            use_bias=False,
+        )(jnp.pi * (coords + 1))
+        return nn.Dense(self.embedding_dim)(
+            jnp.sin(jnp.concatenate([coords, emb, emb + jnp.pi / 2.0], axis=-1))
+        )
+
+
+def _compute_fans(
+    shape,
+    in_axis: Union[int, Sequence[int]] = -2,
+    out_axis: Union[int, Sequence[int]] = -1,
+    batch_axis: Union[int, Sequence[int]] = (),
+):
+    """Compute effective input and output sizes for a linear or convolutional layer.
+
+    Axes not in in_axis, out_axis, or batch_axis are assumed to constitute the "receptive field" of
+    a convolution (kernel spatial dimensions).
+    """
+    if len(shape) <= 1:
+        raise ValueError(
+            f"Can't compute input and output sizes of a {shape.rank}"
+            "-dimensional weights tensor. Must be at least 2D."
+        )
+
+    if isinstance(in_axis, int):
+        in_size = shape[in_axis]
+    else:
+        in_size = math.prod([shape[i] for i in in_axis])
+    if isinstance(out_axis, int):
+        out_size = shape[out_axis]
+    else:
+        out_size = math.prod([shape[i] for i in out_axis])
+    if isinstance(batch_axis, int):
+        batch_size = shape[batch_axis]
+    else:
+        batch_size = math.prod([shape[i] for i in batch_axis])
+    receptive_field_size = np.prod(shape) / in_size / out_size / batch_size
+    fan_in = in_size * receptive_field_size
+    fan_out = out_size * receptive_field_size
+    return fan_in, fan_out
+
+
+def custom_uniform(
+    numerator: Any = 6,
+    mode="fan_in",
+    dtype: Any = jnp.float_,
+    in_axis: Union[int, Sequence[int]] = -2,
+    out_axis: Union[int, Sequence[int]] = -1,
+    batch_axis: Sequence[int] = (),
+    distribution="uniform",
+) -> Initializer:
+    """Builds an initializer that returns real uniformly-distributed random arrays.
+
+    Args:
+      scale: the upper and lower bound of the random distribution.
+      dtype: optional; the initializer's default dtype.
+
+    Returns:
+      An initializer that returns arrays whose values are uniformly distributed in
+      the range ``[-range, range)``.
+    """
+
+    def init(key: KeyArray, shape: Array, dtype: Any = dtype) -> Any:
+        dtype = dtypes.canonicalize_dtype(dtype)
+        fan_in, fan_out = _compute_fans(shape, in_axis, out_axis, batch_axis)
+        if mode == "fan_in":
+            denominator = fan_in
+        elif mode == "fan_out":
+            denominator = fan_out
+        elif mode == "fan_avg":
+            denominator = (fan_in + fan_out) / 2
+        else:
+            raise ValueError(f"invalid mode for variance scaling initializer: {mode}")
+        if distribution == "uniform":
+            return random.uniform(
+                key,
+                shape,
+                dtype,
+                minval=-jnp.sqrt(numerator / denominator),
+                maxval=jnp.sqrt(numerator / denominator),
+            )
+        elif distribution == "normal":
+            return random.normal(key, shape, dtype) * jnp.sqrt(numerator / denominator)
+        elif distribution == "uniform_squared":
+            return random.uniform(
+                key,
+                shape,
+                dtype,
+                minval=-numerator / denominator,
+                maxval=numerator / denominator,
+            )
+        else:
+            raise ValueError(
+                f"invalid distribution for variance scaling initializer: {distribution}"
+            )
+
+    return init
+
+
+class LinearModulation(nn.Module):
+    output_dim: int
+
+    @nn.compact
+    def __call__(self, x: jnp.ndarray, latent: jnp.ndarray) -> jnp.ndarray:
+        # Compute the modulation weights
+        mod_weights = nn.Dense(2 * x.shape[-1])(latent)
+        # split into bias and scale
+        bias, scale = jnp.split(mod_weights, 2, axis=-1)
+        # Apply the modulation
+        x = x * (scale + 1) + bias
+        x = nn.Dense(self.output_dim)(x)
+        return x
 
 
 class SirenLayer(nn.Module):
-    """SIREN layer: Linear layer followed by sine activation.
-    
-    As introduced in "Implicit Neural Representations with Periodic Activation Functions"
-    https://arxiv.org/abs/2006.09661
-    """
-    features: int
-    w0: float = 30.0
-    is_first: bool = False
-    use_bias: bool = True
-    
-    @nn.compact
-    def __call__(self, x):
-        # Initialize first layer differently, as recommended in the SIREN paper
-        if self.is_first:
-            kernel_init = nn.initializers.variance_scaling(
-                scale=1.0, mode='fan_in', distribution='uniform'
-            )
-        else:
-            kernel_init = nn.initializers.variance_scaling(
-                scale=1.0 / self.w0, mode='fan_in', distribution='uniform'
-            )
-        
-        # Linear transformation
-        x = nn.Dense(
-            features=self.features,
-            use_bias=self.use_bias,
-            kernel_init=kernel_init
-        )(x)
-        
-        # Sine activation with frequency modulation
-        return jnp.sin(self.w0 * x)
+    output_dim: int
+    omega_0: float
+    is_first_layer: bool = False
+    is_last_layer: bool = False
+    apply_activation: bool = True
 
-
-class FilmSiren(nn.Module):
-    """SIREN MLP with FiLM conditioning.
-    
-    Sinusoidal neural network with periodic activations that can be modulated
-    by conditioning information through FiLM layers.
-    """
-    features: Sequence[int]  # Hidden layer sizes
-    w0: float = 30.0  # Frequency of first layer
-    w0_initial: float = 30.0  # Frequency of initial layer
-    final_activation: Optional[Callable] = None  # Optional activation for final output
-    use_film: bool = True  # Whether to use FiLM conditioning
-    
-    @nn.compact
-    def __call__(self, x, condition=None):
-        """
-        Args:
-            x: Input coordinates tensor of shape (batch_size, ..., input_dim)
-            condition: Optional conditioning tensor of shape (batch_size, cond_dim)
-            
-        Returns:
-            Output tensor of shape (batch_size, ..., features[-1])
-        """
-        if self.use_film and condition is None:
-            raise ValueError("FiLM conditioning requires a condition tensor, but none was provided")
-            
-        # Initial SIREN layer with different initialization
-        x = SirenLayer(
-            features=self.features[0],
-            w0=self.w0_initial,
-            is_first=True
-        )(x)
-        
-        # Apply FiLM conditioning to first layer output if requested
-        if self.use_film and condition is not None:
-            x = FilmLayer(features=self.features[0])(x, condition)
-        
-        # Hidden layers
-        for i, feat in enumerate(self.features[1:]):
-            x = SirenLayer(
-                features=feat,
-                w0=self.w0
-            )(x)
-            
-            # Apply FiLM after each SIREN layer
-            if self.use_film and condition is not None:
-                x = FilmLayer(features=feat)(x, condition)
-        
-        # Apply final activation if specified
-        if self.final_activation is not None:
-            x = self.final_activation(x)
-            
-        return x
-
-
-class ConditionEncoder(nn.Module):
-    """Encoder for conditioning information.
-    
-    Maps input condition to a representation suitable for FiLM modulation.
-    """
-    features: Sequence[int]  # Hidden layer sizes
-    
-    @nn.compact
-    def __call__(self, condition):
-        x = condition
-        
-        # Process through MLP
-        for feat in self.features[:-1]:
-            x = nn.Dense(features=feat)(x)
-            x = nn.relu(x)
-            
-        # Final layer without activation
-        if len(self.features) > 0:
-            x = nn.Dense(features=self.features[-1])(x)
-            
-        return x
-
-
-class SirenModel(nn.Module):
-    """Complete SIREN model with condition encoder.
-    
-    Combines a condition encoder with a SIREN network for neural field generation.
-    """
-    coord_dim: int  # Input coordinate dimensions (e.g., 2 for images, 3 for volumes)
-    cond_dim: Optional[int] = None  # Conditioning dimension
-    cond_encoder_features: Sequence[int] = (128, 128)  # Condition encoder sizes
-    siren_features: Sequence[int] = (256, 256, 256, 3)  # SIREN network sizes
-    w0: float = 30.0  # Frequency for hidden layers
-    w0_initial: float = 30.0  # Frequency for first layer
-    
     def setup(self):
-        # Setup condition encoder if conditioning is used
-        if self.cond_dim is not None:
-            self.condition_encoder = ConditionEncoder(features=self.cond_encoder_features)
-            use_film = True
-        else:
-            use_film = False
-            
-        # Setup SIREN network
-        self.siren = FilmSiren(
-            features=self.siren_features,
-            w0=self.w0,
-            w0_initial=self.w0_initial,
-            use_film=use_film
+        c = 1 if self.is_first_layer else 6 / self.omega_0**2
+        distrib = "uniform_squared" if self.is_first_layer else "uniform"
+        self.linear = nn.Dense(
+            features=self.output_dim,
+            use_bias=True,
+            kernel_init=custom_uniform(
+                numerator=c, mode="fan_in", distribution=distrib
+            ),
+            bias_init=nn.initializers.zeros,
         )
-    
-    def __call__(self, coords, condition=None):
-        """
-        Args:
-            coords: Coordinate tensor of shape (batch_size, ..., coord_dim)
-            condition: Optional conditioning tensor of shape (batch_size, cond_dim)
-            
-        Returns:
-            Predicted values at coordinates of shape (batch_size, ..., output_dim)
-        """
-        # Process condition if provided
-        if condition is not None and self.cond_dim is not None:
-            encoded_condition = self.condition_encoder(condition)
+
+    def __call__(self, x):
+        after_linear = self.linear(x)
+        if self.apply_activation:
+            return jnp.sin(self.omega_0 * after_linear)
         else:
-            encoded_condition = None
-            
-        # Generate output using SIREN
-        output = self.siren(coords, encoded_condition)
-        
-        return output
+            return after_linear
 
 
-def test_siren_model():
-    """Test function for SirenModel"""
-    # Set random seed for reproducibility
-    key = jax.random.PRNGKey(42)
-    
-    # Create a simple 2D image model with condition
-    model = SirenModel(
-        coord_dim=2,
-        cond_dim=10,
-        cond_encoder_features=(64, 128),
-        siren_features=(256, 256, 256, 3),  # RGB output
-    )
-    
-    # Create sample inputs
-    batch_size = 64
-    img_size = 64
-    key, subkey1, subkey2 = jax.random.split(key, 3)
-    
-    # Create normalized pixel coordinates
-    y, x = jnp.meshgrid(
-        jnp.linspace(-1, 1, img_size),
-        jnp.linspace(-1, 1, img_size),
-        indexing='ij'
-    )
-    coords = jnp.stack([x, y], axis=-1)
-    coords = jnp.broadcast_to(coords[None], (batch_size, img_size, img_size, 2))
-    
-    # Create random condition
-    condition = jax.random.normal(subkey2, (batch_size, 10))
-    
-    # Initialize model
-    params = model.init(subkey1, coords, condition)
-    
-    # Forward pass
-    output = model.apply(params, coords, condition)
-    
-    print(f"Input coords shape: {coords.shape}")
-    print(f"Condition shape: {condition.shape}")
-    print(f"Output shape: {output.shape}")
-    print(f"Expected output shape: {(batch_size, img_size, img_size, 3)}")
-    
-    return output
+class LatentToModulation(nn.Module):
+    layer_sizes: Sequence[int]
+    num_modulation_layers: int
+    modulation_dim: int
+    input_dim: int
+    shift_modulate: bool = True
+    scale_modulate: bool = True
+    activation: Callable[[Array], Array] = nn.relu
+
+    def setup(self):
+        if self.shift_modulate and self.scale_modulate:
+            self.modulations_per_unit = 2
+        elif self.shift_modulate or self.scale_modulate:
+            self.modulations_per_unit = 1
+        else:
+            raise ValueError(
+                "At least one of shift_modulate or scale_modulate must be True"
+            )
+
+        self.modulations_per_layer = self.modulations_per_unit * self.modulation_dim
+        self.modulation_output_size = (
+            self.modulations_per_layer * self.num_modulation_layers
+        )
+
+        # create a MLP to process the latent vector based on self.layer_sizes and self.modulation_output_size
+        self.mlp = MLP(
+            layer_sizes=self.layer_sizes + (self.modulation_output_size,),
+            activation=self.activation,
+        )
+
+    def __call__(self, x: Array) -> Dict[str, Array]:
+        x = self.mlp(x)
+        # Split the output into scale and shift modulations
+        if self.modulations_per_unit == 2:
+            scale, shift = jnp.split(x, 2, axis=-1)
+            scale = (
+                scale.reshape(
+                    (
+                        *x.shape[:-1],
+                        self.num_modulation_layers,
+                        self.modulation_dim,
+                    )
+                )
+                + 1
+            )
+            shift = shift.reshape(
+                (
+                    *x.shape[:-1],
+                    self.num_modulation_layers,
+                    self.modulation_dim,
+                )
+            )
+            return {"scale": scale, "shift": shift}
+        else:
+            x = x.reshape(
+                (
+                    *x.shape[:-1],
+                    self.num_modulation_layers,
+                    self.modulation_dim,
+                )
+            )
+            if self.shift_modulate:
+                return {"shift": x}
+            elif self.scale_modulate:
+                return {"scale": x + 1}
 
 
-if __name__ == "__main__":
-    test_siren_model()
+class ModulatedSIREN(nn.Module):
+    cfg: ConfigDict
+
+    # output_dim: int
+    # hidden_dim: int
+    # num_layers: int
+    # omega_0: float
+    # modulation_hidden_dim: int
+    # modulation_num_layers: int
+    # shift_modulate: bool = True
+    # scale_modulate: bool = True
+
+    def setup(self):
+        modulated_siren_cfg = self.cfg.modulated_siren_cfg
+        self.num_layers = modulated_siren_cfg.num_layers
+        self.hidden_dim = modulated_siren_cfg.hidden_dim
+        self.omega_0 = modulated_siren_cfg.omega_0
+        self.output_dim = modulated_siren_cfg.output_dim
+
+        self.modulator = LatentToModulation(
+            input_dim=1,
+            layer_sizes=[modulated_siren_cfg.hidden_dim] * modulated_siren_cfg.modulation_num_layers,
+            num_modulation_layers=modulated_siren_cfg.num_layers - 1,
+            modulation_dim=modulated_siren_cfg.hidden_dim,
+            scale_modulate=modulated_siren_cfg.scale_modulate,
+            shift_modulate=modulated_siren_cfg.shift_modulate,
+        )
+
+        self.kernel_net = (
+            [
+                SirenLayer(
+                    output_dim=modulated_siren_cfg.hidden_dim,
+                    omega_0=modulated_siren_cfg.omega_0,
+                    is_first_layer=True,
+                    apply_activation=False,
+                )
+            ]
+            + [
+                SirenLayer(
+                    output_dim=modulated_siren_cfg.hidden_dim,
+                    omega_0=modulated_siren_cfg.omega_0,
+                    is_first_layer=False,
+                    apply_activation=False,
+                )
+                for _ in range(self.num_layers - 2)
+            ]
+            + [
+                nn.Dense(
+                    features=modulated_siren_cfg.output_dim,
+                    use_bias=True,
+                    kernel_init=custom_uniform(
+                        numerator=6 / modulated_siren_cfg.omega_0**2,
+                        mode="fan_in",
+                        distribution="uniform",
+                    ),
+                    bias_init=nn.initializers.zeros,
+                )
+            ]
+        )
+
+    def __call__(self, x, latent):
+        modulations = self.modulator(latent)
+
+        for layer_num, layer in enumerate(self.kernel_net):
+            x = layer(x)
+            if layer_num < self.num_layers - 1:
+                x = self.modulate(x, modulations, layer_num)
+                x = jnp.sin(self.omega_0 * x)
+
+        return x
+
+    def modulate(
+        self, x: Array, modulations: Dict[str, Array], layer_num: int
+    ) -> Array:
+        """Modulates input according to modulations.
+
+        Args:
+            x: Hidden features of MLP.
+            modulations: Dict with keys 'scale' and 'shift' (or only one of them)
+            containing modulations.
+
+        Returns:
+            Modulated vector.
+        """
+        if "scale" in modulations:
+            x = modulations["scale"][..., layer_num, :][..., None, :] * x
+        if "shift" in modulations:
+            x = x + modulations["shift"][..., layer_num, :][..., None, :]
+        return x

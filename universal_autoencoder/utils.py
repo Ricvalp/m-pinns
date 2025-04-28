@@ -15,4 +15,3 @@ def numpy_collate_with_distances(batch):
     batch = numpy_collate(batch)
     points, idxs, distances = batch
     return points, distances[:, idxs]
-

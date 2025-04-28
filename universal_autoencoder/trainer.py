@@ -9,9 +9,9 @@ import os
 import json
 import matplotlib.pyplot as plt
 from jax import vmap
-from universal_autoencoder.universal_autoencoder import UniversalAutoencoder
+from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
 from universal_autoencoder.upt_encoder import EncoderSupernodes
-from universal_autoencoder.siren import SirenModel
+from universal_autoencoder._siren import SirenModel
 
 from chart_autoencoder.utils import ModelCheckpoint, set_profiler
 
@@ -66,21 +66,22 @@ class TrainerUniversalAutoEncoder:
         self.init_model()
         self.create_functions()
 
-
     def create_data_loader(self, batch_size):
         """Create a data loader iterator from the dataset."""
         # Check if dataset has a direct get_batch method
-        if hasattr(self.dataset, 'get_batch'):
+        if hasattr(self.dataset, "get_batch"):
             # Use generator to create an infinite iterator
             def data_generator():
                 while True:
                     yield self.dataset.get_batch()
+
             return data_generator()
-            
+
         # If dataset supports PyTorch DataLoader interface
-        elif hasattr(self.dataset, '__getitem__') and hasattr(self.dataset, '__len__'):
+        elif hasattr(self.dataset, "__getitem__") and hasattr(self.dataset, "__len__"):
             # Create dataloader
             from torch.utils.data import DataLoader
+
             dataloader = DataLoader(
                 dataset=self.dataset,
                 batch_size=batch_size,
@@ -88,21 +89,24 @@ class TrainerUniversalAutoEncoder:
                 num_workers=8,
                 collate_fn=numpy_collate_with_distances,
             )
+
             # Create infinite iterator
             def cyclic_iterator():
                 while True:
                     for batch in dataloader:
                         yield batch
+
             return cyclic_iterator()
 
         else:
-            raise ValueError("Dataset must have a get_batch method or support PyTorch DataLoader interface")
-
+            raise ValueError(
+                "Dataset must have a get_batch method or support PyTorch DataLoader interface"
+            )
 
     def init_model(self):
         self.states = []
         self.rng, rng = jax.random.split(self.rng)
-        
+
         encoder = EncoderSupernodes(
             input_dim=self.cfg_model.input_dim,
             ndim=self.cfg_model.ndim,
@@ -121,7 +125,7 @@ class TrainerUniversalAutoEncoder:
             output_coord_dim=self.cfg_model.output_coord_dim,
             coord_enc_dim=self.cfg_model.coord_enc_dim,
             coord_enc_depth=self.cfg_model.coord_enc_depth,
-            coord_enc_num_heads=self.cfg_model.coord_enc_num_heads
+            coord_enc_num_heads=self.cfg_model.coord_enc_num_heads,
         )
         self.encoder_apply_fn = encoder.apply
 
@@ -156,7 +160,7 @@ class TrainerUniversalAutoEncoder:
             output_coord_dim=self.cfg_model.output_coord_dim,
             coord_enc_dim=self.cfg_model.coord_enc_dim,
             coord_enc_depth=self.cfg_model.coord_enc_depth,
-            coord_enc_num_heads=self.cfg_model.coord_enc_num_heads
+            coord_enc_num_heads=self.cfg_model.coord_enc_num_heads,
         )
 
         # optimizer = optax.adamw(self.lr, b1=0.9, b2=0.999, eps=1e-8, weight_decay=0.001)
@@ -171,7 +175,6 @@ class TrainerUniversalAutoEncoder:
             params=params,
             tx=optimizer,
         )
-
 
     def create_functions(self):
 
@@ -245,28 +248,27 @@ class TrainerUniversalAutoEncoder:
 
         self.train_step = jax.jit(train_step)
 
-
     def fit(self):
         step = 0
         reg_lambda = self.reg_lambda
-    
+
         progress_bar = tqdm(range(self.num_steps))
-        
+
         for _ in progress_bar:
             try:
                 batch = next(self.chart_loader)
-                
+
                 self.rng, rng = jax.random.split(self.rng)
-                
+
                 self.state, loss, aux, grads = self.train_step(
                     self.state, batch, reg_lambda, rng
                 )
-                
+
                 reg_lambda = reg_lambda * self.lambda_reg_decay
-                
+
                 if self.wandb_log and step % self.wandb_log_every == 0:
                     riemannian_loss, geo_loss, recon_loss = aux
-                    
+
                     log_dict = {
                         "loss": loss,
                         "riemannian_loss": riemannian_loss,
@@ -275,25 +277,27 @@ class TrainerUniversalAutoEncoder:
                         "reg_lambda": reg_lambda,
                         "step": step,
                     }
-                        
+
                     wandb.log(log_dict, step=step)
-                    
+
                 if step % self.save_every == 0:
                     self.save_model(step=step)
-                
-                progress_bar.set_postfix(loss=float(loss), recon=float(aux[2]), reg_lambda=float(reg_lambda))
-                
-                step += 1
-                
-            except StopIteration:
-                self.chart_loader = self.create_data_loader(batch_size=self.cfg_model.batch_size)
-                        
-        self.save_model(step=self.num_steps - 1)
 
+                progress_bar.set_postfix(
+                    loss=float(loss), recon=float(aux[2]), reg_lambda=float(reg_lambda)
+                )
+
+                step += 1
+
+            except StopIteration:
+                self.chart_loader = self.create_data_loader(
+                    batch_size=self.cfg_model.batch_size
+                )
+
+        self.save_model(step=self.num_steps - 1)
 
     def save_model(self, step):
         self.checkpointer.save_checkpoint(step=step, params=self.state.params)
-
 
     def load_model(self, step=None):
         if step is None:
@@ -302,11 +306,8 @@ class TrainerUniversalAutoEncoder:
             params=self.checkpointer.load_checkpoint(step=step)
         )
 
-
     def model_fn(self, points) -> jnp.ndarray:
         return self.state.apply_fn({"params": self.state.params}, points)
 
-
     def decoder_fn(self, z) -> jnp.ndarray:
         return self.decoder_apply_fn({"params": self.state.params["D"]}, z)
-

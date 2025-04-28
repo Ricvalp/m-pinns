@@ -21,7 +21,25 @@ def get_config():
 
     config.mode = "train"
     config.N = 100
-    config.idxs = [3461, 4175, 4865, 5338, 5731, 6239, 1333, 6886, 7580, 3094, 8521, 2245, 9640, 9831, 2678, 11078, 11210]
+    config.idxs = [
+        3461,
+        4175,
+        4865,
+        5338,
+        5731,
+        6239,
+        1333,
+        6886,
+        7580,
+        3094,
+        8521,
+        2245,
+        9640,
+        9831,
+        2678,
+        11078,
+        11210,
+    ]
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
@@ -55,7 +73,7 @@ def get_config():
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
     optim.grad_accum_steps = 0
-    optim.optimizer ="Adam" # "AdamWarmupCosineDecay"  #
+    optim.optimizer = "Adam"  # "AdamWarmupCosineDecay"  #
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
@@ -86,7 +104,6 @@ def get_config():
     )
     training.bcs_batches_path = "pinns/eikonal_autodecoder/coil/data/bcs_batches.npy"
     training.bcs_values_path = "pinns/eikonal_autodecoder/coil/data/bcs_values.npy"
-
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()

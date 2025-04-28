@@ -190,13 +190,13 @@
             },
         },
         {
-            "name": "fit universal autoencoder",
+            "name": "test universal autoencoder",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/fit/fit_universal_autoencoder.py",
-            "args": [
-                "--config=fit/config/fit_universal_autoencoder.py",
-            ],
+            "program": "${workspaceFolder}/universal_autoencoder/upt_autoencoder.py",
+            // "args": [
+            //     "--config=fit/config/fit_universal_autoencoder.py",
+            // ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}",
             },

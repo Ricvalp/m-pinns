@@ -25,7 +25,7 @@ _TASK_FILE = config_flags.DEFINE_config_file(
 def main(_):
     # Load configuration
     cfg = load_cfgs(_TASK_FILE)
-    
+
     # Create necessary directories
     Path(cfg.figure_path).mkdir(parents=True, exist_ok=True)
     Path(cfg.profiler.log_dir).mkdir(parents=True, exist_ok=True)

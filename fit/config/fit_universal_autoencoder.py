@@ -61,7 +61,9 @@ def get_config():
     cfg.model.perc_num_heads = 4  # Number of attention heads in perceiver
     cfg.model.num_latent_tokens = 8  # Number of latent tokens in perceiver
     # Conditioning parameters
-    cfg.model.cond_dim = None  # Dimension of condition vector (None if not using conditioning)
+    cfg.model.cond_dim = (
+        None  # Dimension of condition vector (None if not using conditioning)
+    )
     cfg.model.cond_encoder_features = (128, 128)  # Condition encoder hidden dimensions
     # SIREN parameters
     cfg.model.siren_features = (256, 256, 256, 3)  # SIREN network hidden dimensions
@@ -85,7 +87,9 @@ def get_config():
     cfg.dataset.disk_radius = 1.0  # Radius of the disk
     cfg.dataset.num_control = 20  # Number of control points for deformation
     cfg.dataset.deform_scale = 0.3  # Scale of deformation
-    cfg.dataset.kernel_func = "gaussian_kernel"  # Type of kernel function for deformation
+    cfg.dataset.kernel_func = (
+        "gaussian_kernel"  # Type of kernel function for deformation
+    )
     cfg.dataset.kernel_epsilon = 0.5  # Epsilon parameter for kernel function
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -99,9 +103,13 @@ def get_config():
     cfg.train.reg_lambda = 0.1  # Regularization strength
     cfg.train.weight_decay = 1e-3  # Weight decay for optimizer
     cfg.train.reg_lambda_decay = 0.9995  # Decay rate for regularization strength
-    cfg.train.reg = "none" # "reg+geo"  # Regularization method: "reg", "reg+geo", or "none"
-    cfg.train.noise_scale_riemannian = 0.02  # Noise scale for Riemannian metric computation
+    cfg.train.reg = (
+        "none"  # "reg+geo"  # Regularization method: "reg", "reg+geo", or "none"
+    )
+    cfg.train.noise_scale_riemannian = (
+        0.02  # Noise scale for Riemannian metric computation
+    )
     cfg.train.lambda_geo_loss = 5.0  # Weight for geodesic loss term
     cfg.train.lambda_g_inv = 0.1  # Weight for inverse metric regularization
-    
+
     return cfg

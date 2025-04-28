@@ -80,7 +80,7 @@ def generate_data(config: ml_collections.ConfigDict):
         # batch = next(res_sampler), next(boundary_sampler), next(bcs_sampler)
         # res_batches.append(batch[0])
 
-        batch = None, next(boundary_sampler) # next(bcs_sampler)
+        batch = None, next(boundary_sampler)  # next(bcs_sampler)
 
         boundary_batches.append(batch[1][0])
         boundary_pairs_idxs.append(batch[1][1])
@@ -94,9 +94,14 @@ def generate_data(config: ml_collections.ConfigDict):
     # bcs_values_array = np.array(bcs_values)
 
     # np.save(config.training.batches_path + "res_batches.npy", res_batches_array)
-    np.save(config.training.batches_path + "boundary_batches.npy", boundary_batches_array)
-    np.save(config.training.batches_path + "boundary_pairs_idxs.npy", boundary_pairs_idxs_array)
-    
+    np.save(
+        config.training.batches_path + "boundary_batches.npy", boundary_batches_array
+    )
+    np.save(
+        config.training.batches_path + "boundary_pairs_idxs.npy",
+        boundary_pairs_idxs_array,
+    )
+
     # np.save(config.training.batches_path + "bcs_batches.npy", bcs_batches_array)
     # np.save(config.training.values_path + "bcs_values.npy", bcs_values_array)
 
@@ -111,8 +116,6 @@ def generate_data(config: ml_collections.ConfigDict):
     )
     # print("Size of bcs_batches in MB: ", bcs_batches_array.nbytes / 1024 / 1024)
     # print("Size of bcs_values in MB: ", bcs_values_array.nbytes / 1024 / 1024)
-
-
 
     # if step % 100 == 0:
     #     res_batches_array = np.array(res_batches)

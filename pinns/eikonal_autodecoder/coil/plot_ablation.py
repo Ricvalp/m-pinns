@@ -8,18 +8,20 @@ if __name__ == "__main__":
 
     # Combine the data
     combined_df = pd.merge(
-        mpinn_df[['N', 'mpinn_corr', 'mpinn_mse', 'seed']], 
-        deltapinn_df[['N', 'deltapinn_corr', 'deltapinn_mse', 'seed']], 
-        on=['N', 'seed'], 
-        how='outer'
+        mpinn_df[["N", "mpinn_corr", "mpinn_mse", "seed"]],
+        deltapinn_df[["N", "deltapinn_corr", "deltapinn_mse", "seed"]],
+        on=["N", "seed"],
+        how="outer",
     )
 
     # Save combined data
-    combined_df.to_csv("pinns/eikonal_autodecoder/coil/combined_ablation.csv", index=False)
+    combined_df.to_csv(
+        "pinns/eikonal_autodecoder/coil/combined_ablation.csv", index=False
+    )
 
     # Create plots
     plot_ablation(
         "pinns/eikonal_autodecoder/coil/ablation.csv",
         "pinns/eikonal_autodecoder/coil/deltapinn_ablation.csv",
-        name="ablation_comparison"
+        name="ablation_comparison",
     )
