@@ -9,7 +9,9 @@ import os
 import json
 import matplotlib.pyplot as plt
 from jax import vmap
-from universal_autoencoder import UniversalAutoencoder, EncoderSupernodes, SirenModel
+from universal_autoencoder.universal_autoencoder import UniversalAutoencoder
+from universal_autoencoder.upt_encoder import EncoderSupernodes
+from universal_autoencoder.siren import SirenModel
 
 from chart_autoencoder.utils import ModelCheckpoint, set_profiler
 
@@ -39,7 +41,7 @@ class TrainerUniversalAutoEncoder:
         self.figure_path = cfg.figure_path
         self.profiler_cfg = cfg.profiler
         self.cfg_model = cfg.model
-        self.num_epochs = cfg.train.num_epochs
+        self.num_steps = cfg.train.num_steps
         self.lambda_reg_decay = cfg.train.reg_lambda_decay
         self.noise_scale_riemannian = cfg.train.noise_scale_riemannian
         self.lambda_geo_loss = cfg.train.lambda_geo_loss
@@ -107,6 +109,7 @@ class TrainerUniversalAutoEncoder:
             radius=self.cfg_model.radius,
             max_degree=self.cfg_model.max_degree,
             gnn_dim=self.cfg_model.gnn_dim,
+            max_supernodes=self.cfg_model.max_supernodes,
             enc_dim=self.cfg_model.enc_dim,
             enc_depth=self.cfg_model.enc_depth,
             enc_num_heads=self.cfg_model.enc_num_heads,
@@ -134,10 +137,10 @@ class TrainerUniversalAutoEncoder:
 
         model = UniversalAutoencoder(
             coord_dim=self.cfg_model.input_dim,
-            ndim=self.cfg_model.ndim,
             radius=self.cfg_model.radius,
             max_degree=self.cfg_model.max_degree,
             gnn_dim=self.cfg_model.gnn_dim,
+            max_supernodes=self.cfg_model.max_supernodes,
             enc_dim=self.cfg_model.enc_dim,
             enc_depth=self.cfg_model.enc_depth,
             enc_num_heads=self.cfg_model.enc_num_heads,
@@ -205,9 +208,9 @@ class TrainerUniversalAutoEncoder:
         elif self.reg == "none":
 
             def loss_fn(params, batch, reg_lambda, key):
-                points, distances = batch
-                predictions, latent = self.state.apply_fn({"params": params}, points)
-                recon_loss = jnp.sum((predictions - points) ** 2, axis=-1).mean()
+                points = batch
+                pred = self.state.apply_fn({"params": params}, points)
+                recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
                 return recon_loss, (0.0, 0.0, recon_loss)
 
         else:
@@ -246,46 +249,46 @@ class TrainerUniversalAutoEncoder:
     def fit(self):
         step = 0
         reg_lambda = self.reg_lambda
+    
+        progress_bar = tqdm(range(self.num_steps))
         
-        for epoch in range(self.num_epochs):
-            progress_bar = tqdm(range(len(self.dataset) // self.cfg_model.batch_size), desc=f"Epoch {epoch+1}/{self.num_epochs}")
-            
-            for _ in progress_bar:
-                try:
-                    batch = next(self.chart_loader)
-                    
-                    self.rng, rng = jax.random.split(self.rng)
-                    
-                    self.state, loss, aux, grads = self.train_step(
-                        self.state, batch, reg_lambda, rng
-                    )
-                    
-                    reg_lambda = reg_lambda * self.lambda_reg_decay
-                    
-                    if self.wandb_log and step % self.wandb_log_every == 0:
-                        riemannian_loss, geo_loss, recon_loss = aux
-                        
-                        log_dict = {
-                            "loss": loss,
-                            "riemannian_loss": riemannian_loss,
-                            "geodesic_loss": geo_loss,
-                            "recon_loss": recon_loss,
-                            "reg_lambda": reg_lambda,
-                            "epoch": epoch,
-                        }
-                            
-                        wandb.log(log_dict, step=step)
-                    
-                    progress_bar.set_postfix(loss=float(loss), recon=float(aux[2]), reg_lambda=float(reg_lambda))
-                    
-                    step += 1
-                    
-                except StopIteration:
-                    self.chart_loader = self.create_data_loader(batch_size=self.cfg_model.batch_size)
+        for _ in progress_bar:
+            try:
+                batch = next(self.chart_loader)
                 
-            self.save_model(step=epoch)
-            
-        self.save_model(step=self.num_epochs - 1)
+                self.rng, rng = jax.random.split(self.rng)
+                
+                self.state, loss, aux, grads = self.train_step(
+                    self.state, batch, reg_lambda, rng
+                )
+                
+                reg_lambda = reg_lambda * self.lambda_reg_decay
+                
+                if self.wandb_log and step % self.wandb_log_every == 0:
+                    riemannian_loss, geo_loss, recon_loss = aux
+                    
+                    log_dict = {
+                        "loss": loss,
+                        "riemannian_loss": riemannian_loss,
+                        "geodesic_loss": geo_loss,
+                        "recon_loss": recon_loss,
+                        "reg_lambda": reg_lambda,
+                        "step": step,
+                    }
+                        
+                    wandb.log(log_dict, step=step)
+                    
+                if step % self.save_every == 0:
+                    self.save_model(step=step)
+                
+                progress_bar.set_postfix(loss=float(loss), recon=float(aux[2]), reg_lambda=float(reg_lambda))
+                
+                step += 1
+                
+            except StopIteration:
+                self.chart_loader = self.create_data_loader(batch_size=self.cfg_model.batch_size)
+                        
+        self.save_model(step=self.num_steps - 1)
 
 
     def save_model(self, step):

@@ -57,7 +57,7 @@ class ContinuousSincosEmbed(nn.Module):
             # Create embeddings for this dimension
             emb_i = pos_i * emb[None, None, None, :]  # (batch_size, num_points, 1, half_emb_dim)
             emb_i = jnp.concatenate([jnp.sin(emb_i), jnp.cos(emb_i)], axis=-1)  # (batch_size, num_points, 1, emb_dim_per_dim)
-            emb_i = emb_i.reshape(batch_size, num_points, emb_dim_per_dim)  # (batch_size, num_points, emb_dim_per_dim)
+            emb_i = emb_i.reshape(batch_size, num_points, 2 * half_emb_dim)  # (batch_size, num_points, emb_dim_per_dim)
             
             embeddings.append(emb_i)
         
@@ -314,14 +314,7 @@ def batch_segment_aggregation(src, idx, num_segments, reduce="mean"):
     """
     batch_size, num_elements, feature_dim = src.shape
     
-    # Convert num_segments to a Python int if it's a JAX array
-    # This is necessary because jax.nn.one_hot requires a hashable value
-    if hasattr(num_segments, 'item'):
-        num_segments = num_segments.item()
-    elif isinstance(num_segments, jnp.ndarray):
-        num_segments = int(num_segments)
-    
-    def aggregate_sample(sample_src, sample_idx):
+    def aggregate_sample(sample_src, sample_idx, sample_num_segments):
         # Create mask for valid indices (not -1)
         valid_mask = sample_idx >= 0
         
@@ -330,7 +323,7 @@ def batch_segment_aggregation(src, idx, num_segments, reduce="mean"):
         clipped_idx = jnp.maximum(sample_idx, 0)
         
         # Create one-hot encoding of segment indices
-        one_hot = jax.nn.one_hot(clipped_idx, num_segments)  # (num_elements, num_segments)
+        one_hot = jax.nn.one_hot(clipped_idx, sample_num_segments)  # (num_elements, num_segments)
         
         # Apply mask to one-hot encoding
         one_hot = one_hot * valid_mask[:, None]
@@ -370,8 +363,9 @@ def batch_segment_aggregation(src, idx, num_segments, reduce="mean"):
             
         return result
     
-    # Apply aggregation to each sample in batch
-    return jax.vmap(aggregate_sample)(src, idx)
+    # Apply aggregation to each sample in batch, passing num_segments to each sample
+    # Use vmap with in_axes to specify which arguments have batch dimension
+    return jax.vmap(aggregate_sample, in_axes=(0, 0, None))(src, idx, num_segments)
 
 
 class SupernodePooling(nn.Module):
@@ -380,6 +374,7 @@ class SupernodePooling(nn.Module):
     input_dim: int
     hidden_dim: int
     ndim: int
+    max_supernodes: int  # New parameter for fixed supernode count
     init_weights: str = "torch"
     
     @nn.compact
@@ -391,7 +386,7 @@ class SupernodePooling(nn.Module):
             supernode_mask: Shape (batch_size, num_points) - Boolean mask for supernodes
             
         Returns:
-            x: Shape (batch_size, num_supernodes, hidden_dim)
+            x: Shape (batch_size, max_supernodes, hidden_dim)
         """
         batch_size, num_points, _ = input_feat.shape
         
@@ -505,21 +500,20 @@ class SupernodePooling(nn.Module):
         masked_messages = processed_messages * valid_message_mask
         # masked_messages: (batch_size, max_edges, hidden_dim)
         
-        # Compute number of supernodes per batch
+        # Compute number of supernodes per batch - used for masking, not sizing
         num_supernodes = jnp.sum(supernode_mask, axis=1)
-        max_supernodes = jnp.max(num_supernodes).item()  # Convert to Python int
         
-        # Aggregate messages to supernodes (aggregation function now handles -1 indices)
+        # Use the fixed max_supernodes value instead of computing dynamically
+        # Aggregate messages to supernodes
         x = batch_segment_aggregation(
             src=masked_messages,
             idx=dst_indices,
-            num_segments=max_supernodes,
+            num_segments=self.max_supernodes,  # Use fixed parameter
             reduce="mean"
         )
         
-        # Create mask for valid supernodes
-        # Use Python int for max_supernodes
-        supernode_valid_mask = jnp.arange(max_supernodes)[None, :] < num_supernodes[:, None]
+        # Create mask for valid supernodes using fixed max_supernodes
+        supernode_valid_mask = jnp.arange(self.max_supernodes)[None, :] < num_supernodes[:, None]
         
         # Zero out invalid supernodes
         x = x * supernode_valid_mask[:, :, None]
@@ -536,24 +530,26 @@ class EncoderSupernodes(nn.Module):
     enc_dim: int
     enc_depth: int
     enc_num_heads: int
+    max_supernodes: int  # New parameter for fixed supernode count
     perc_dim: Optional[int] = None
     perc_num_heads: Optional[int] = None
     num_latent_tokens: Optional[int] = None
     cond_dim: Optional[int] = None
     init_weights: str = "truncnormal"
-    output_coord_dim: Optional[int] = None  # Output coordinate dimensions (e.g., 2 for 2D)
-    coord_enc_dim: Optional[int] = None  # Dimension for coordinate encoder
-    coord_enc_depth: Optional[int] = 2  # Depth of coordinate encoder transformer
-    coord_enc_num_heads: Optional[int] = 4  # Number of heads in coordinate encoder
+    output_coord_dim: Optional[int] = None
+    coord_enc_dim: Optional[int] = None
+    coord_enc_depth: Optional[int] = 2
+    coord_enc_num_heads: Optional[int] = 4
     
     def setup(self):
-        # Supernode pooling
+        # Supernode pooling with fixed max_supernodes
         self.supernode_pooling = SupernodePooling(
             radius=self.radius,
             max_degree=self.max_degree,
             input_dim=self.input_dim,
             hidden_dim=self.gnn_dim,
             ndim=self.ndim,
+            max_supernodes=self.max_supernodes,  # Pass the fixed parameter
         )
         
         # Encoder projection
@@ -667,17 +663,22 @@ class EncoderSupernodes(nn.Module):
                - Without perceiver: (batch_size, num_supernodes, enc_dim)
             - coords: Transformed coordinates, shape (batch_size, num_points, output_coord_dim)
         """
-        # Detect which mode we're in based on the presence of input_pos
+        # When using with UniversalAutoencoder in points-only mode,
+        # make sure we use a valid supernode mask with correct count
         if input_pos is None:
-            # We're in "points-only" mode (for UniversalAutoencoder)
-            # Here we assume that input_feat_or_points contains the positions
-            # and there are no separate features
+            # We're in "points-only" mode
             points = input_feat_or_points
-            input_feat = points  # Use points as features too
+            input_feat = points
             input_pos = points
-            supernode_mask = jnp.ones((points.shape[0], points.shape[1]), dtype=bool)  # All points are supernodes
+            
+            # Create a mask where first max_supernodes points are supernodes
+            # This ensures a fixed number of supernodes compatible with our model
+            batch_size, num_points = points.shape[0], points.shape[1]
+            supernode_mask = jnp.zeros((batch_size, num_points), dtype=bool)
+            # valid_supernodes = jnp.minimum(num_points, self.max_supernodes)
+            supernode_mask = supernode_mask.at[:, :self.max_supernodes].set(True)
         else:
-            # We're in the standard mode with separate feature and position tensors
+            # Standard mode with separate feature and position tensors
             input_feat = input_feat_or_points
         
         # Check inputs
@@ -788,7 +789,7 @@ def test_batch_encoder_supernodes():
     key, subkey4 = jax.random.split(key)
     condition = jax.random.normal(subkey4, (batch_size, 16))
     
-    # Initialize model with coordinate transformation
+    # Initialize model with coordinate transformation and fixed max_supernodes
     model = EncoderSupernodes(
         input_dim=input_dim,
         ndim=ndim,
@@ -798,6 +799,7 @@ def test_batch_encoder_supernodes():
         enc_dim=64,
         enc_depth=2,
         enc_num_heads=4,
+        max_supernodes=32,  # Fixed maximum number of supernodes
         perc_dim=64,
         perc_num_heads=4,
         num_latent_tokens=8,
@@ -839,6 +841,7 @@ def test_batch_encoder_supernodes():
             # cond_dim=16,
             init_weights="truncnormal",
             # No output_coord_dim specified, so should just pass through the input coordinates
+            max_supernodes=32
         )
         
         key, subkey = jax.random.split(key)

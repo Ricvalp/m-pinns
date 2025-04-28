@@ -3,8 +3,8 @@ import jax.numpy as jnp
 import flax.linen as nn
 from typing import Sequence, Callable, Optional, Any, Tuple
 
-from upt_encoder import BatchEncoderSupernodes
-from siren import SirenModel
+from universal_autoencoder.upt_encoder import EncoderSupernodes
+from universal_autoencoder.siren import SirenModel
 
 
 class UniversalAutoencoder(nn.Module):
@@ -21,6 +21,7 @@ class UniversalAutoencoder(nn.Module):
     radius: float = 1.0
     max_degree: int = 5
     gnn_dim: int = 128
+    max_supernodes: int = 32
     enc_dim: int = 128
     enc_depth: int = 4
     enc_num_heads: int = 4
@@ -36,12 +37,13 @@ class UniversalAutoencoder(nn.Module):
 
     def setup(self):
         # UPT encoder
-        self.upt_encoder = BatchEncoderSupernodes(
+        self.upt_encoder = EncoderSupernodes(
             input_dim=self.coord_dim,
             ndim=self.coord_dim,
             radius=self.radius,
             max_degree=self.max_degree,
             gnn_dim=self.gnn_dim,
+            max_supernodes=self.max_supernodes,
             enc_dim=self.enc_dim,
             enc_depth=self.enc_depth,
             enc_num_heads=self.enc_num_heads,

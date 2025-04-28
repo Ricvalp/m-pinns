@@ -39,6 +39,7 @@ def fit_rbf(control_points, displacements, kernel_func, epsilon, reg=1e-8):
     weights = jnp.linalg.solve(A, displacements)
     return weights
 
+
 @partial(jit, static_argnames=['kernel_func'])
 def evaluate_rbf(points_to_eval, control_points, weights, kernel_func, epsilon):
     diff = points_to_eval[:, None, :] - control_points[None, :, :]
@@ -46,6 +47,7 @@ def evaluate_rbf(points_to_eval, control_points, weights, kernel_func, epsilon):
     Phi_eval = kernel_func(distances, epsilon)
     delta_points = Phi_eval @ weights
     return delta_points
+
 
 # --- Main Deformation Function (JIT applied, Unchanged Logic) ---
 @partial(jit, static_argnums=(2, 4)) # n_control_points, kernel_func are static
@@ -73,6 +75,7 @@ def generate_disk_pointcloud(key, n_points, radius=1.0):
     y = r * jnp.sin(theta)
     z = jnp.zeros_like(x)
     return jnp.column_stack((x, y, z))
+
 
 @jit
 def random_rotation_matrix(key):
@@ -147,7 +150,7 @@ class DeformedDiskDataset:
                  num_control=10, 
                  deform_scale=0.5, 
                  kernel_func=thin_plate_spline_kernel, 
-                 kernel_epsilon=2.5, 
+                 kernel_epsilon=2.5,
                  control_point_range=1.5, 
                  rbf_regularization=1e-7):
         """Initialize the dataset with parameters for disk generation.

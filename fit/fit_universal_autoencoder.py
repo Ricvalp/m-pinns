@@ -14,6 +14,7 @@ from universal_autoencoder import (
 from chart_autoencoder import (
     compute_norm_g_ginv_from_params_autoencoder,
 )
+import datasets.random_chart_dataset as chart_dataset
 
 
 _TASK_FILE = config_flags.DEFINE_config_file(
@@ -41,10 +42,11 @@ def main(_):
     dataset = DeformedDiskDataset(
         seed=cfg.seed,
         num_points=cfg.dataset.num_points,
+        batch_size=cfg.train.batch_size,
         disk_radius=cfg.dataset.disk_radius,
         num_control=cfg.dataset.num_control,
         deform_scale=cfg.dataset.deform_scale,
-        kernel_func=cfg.dataset.kernel_func,
+        kernel_func=getattr(chart_dataset, cfg.dataset.kernel_func),
         kernel_epsilon=cfg.dataset.kernel_epsilon,
     )
 
