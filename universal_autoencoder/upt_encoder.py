@@ -4,6 +4,266 @@ import flax.linen as nn
 from typing import Optional, Callable, Tuple, Dict, Any
 
 
+class PerceiverAttention(nn.Module):
+    def __init__(
+            self,
+            dim,
+            kv_dim=None,
+            num_heads=8,
+            bias=True,
+            concat_query_to_kv=False,
+            init_weights="truncnormal002",
+            init_last_proj_zero=False,
+    ):
+        super().__init__()
+        assert hasattr(F, "scaled_dot_product_attention")
+        assert dim % num_heads == 0, "dim should be divisible by num_heads"
+        self.num_heads = num_heads
+        self.head_dim = dim // num_heads
+        self.concat_query_to_kv = concat_query_to_kv
+        self.init_weights = init_weights
+        self.init_last_proj_zero = init_last_proj_zero
+
+        self.kv = nn.Linear(kv_dim or dim, dim * 2, bias=bias)
+        self.q = nn.Linear(dim, dim, bias=bias)
+        self.proj = nn.Linear(dim, dim, bias=bias)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if self.init_weights == "torch":
+            pass
+        elif self.init_weights == "xavier_uniform":
+            self.apply(init_xavier_uniform_zero_bias)
+            init_xavier_uniform_merged_linear(self.kv, num_layers=2)
+        elif self.init_weights in ["truncnormal", "truncnormal002"]:
+            self.apply(init_truncnormal_zero_bias)
+        else:
+            raise NotImplementedError
+        if self.init_last_proj_zero:
+            nn.init.zeros_(self.proj.weight)
+            # init_weights == "torch" has no zero bias init
+            if self.proj.bias is not None:
+                nn.init.zeros_(self.proj.bias)
+
+    def forward(self, q, kv, attn_mask=None):
+        # project to attention space
+        if self.concat_query_to_kv:
+            kv = torch.concat([kv, q], dim=1)
+        kv = self.kv(kv)
+        q = self.q(q)
+
+        # split per head
+        q = einops.rearrange(
+            q,
+            "bs seqlen_q (num_heads head_dim) -> bs num_heads seqlen_q head_dim",
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+        )
+        k, v = einops.rearrange(
+            kv,
+            "bs seqlen_kv (two num_heads head_dim) -> two bs num_heads seqlen_kv head_dim",
+            two=2,
+            num_heads=self.num_heads,
+            head_dim=self.head_dim,
+        ).unbind(0)
+
+        x = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
+        x = einops.rearrange(x, "bs num_heads seqlen head_dim -> bs seqlen (num_heads head_dim)")
+        x = self.proj(x)
+        return x
+
+
+class PerceiverBlock(nn.Module):
+    def __init__(
+            self,
+            dim,
+            num_heads,
+            kv_dim=None,
+            mlp_hidden_dim=None,
+            drop_path=0.,
+            act_ctor=nn.GELU,
+            norm_ctor=nn.LayerNorm,
+            bias=True,
+            concat_query_to_kv=False,
+            layerscale=None,
+            eps=1e-6,
+            init_weights="xavier_uniform",
+            init_norms="nonaffine",
+            init_last_proj_zero=False,
+    ):
+        super().__init__()
+        self.init_norms = init_norms
+        mlp_hidden_dim = mlp_hidden_dim or dim * 4
+        self.norm1q = norm_ctor(dim, eps=eps)
+        self.norm1kv = norm_ctor(kv_dim or dim, eps=eps)
+        self.attn = PerceiverAttention1d(
+            dim=dim,
+            num_heads=num_heads,
+            kv_dim=kv_dim,
+            bias=bias,
+            concat_query_to_kv=concat_query_to_kv,
+            init_weights=init_weights,
+            init_last_proj_zero=init_last_proj_zero,
+        )
+        self.ls1 = nn.Identity() if layerscale is None else LayerScale(dim, init_scale=layerscale)
+        self.drop_path1 = DropPath(drop_prob=drop_path)
+        self.norm2 = norm_ctor(dim, eps=eps)
+        self.mlp = Mlp(
+            in_dim=dim,
+            hidden_dim=mlp_hidden_dim,
+            bias=bias,
+            act_ctor=act_ctor,
+            init_weights=init_weights,
+            init_last_proj_zero=init_last_proj_zero,
+        )
+        self.ls2 = nn.Identity() if layerscale is None else LayerScale(dim, init_scale=layerscale)
+        self.drop_path2 = DropPath(drop_prob=drop_path)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        if self.init_norms == "torch":
+            pass
+        elif self.init_norms == "nonaffine":
+            init_norms_as_noaffine(self.norm1q)
+            init_norms_as_noaffine(self.norm1kv)
+            init_norms_as_noaffine(self.norm2)
+        else:
+            raise NotImplementedError
+
+    def _attn_residual_path(self, q, kv, attn_mask):
+        return self.ls1(self.attn(q=self.norm1q(q), kv=self.norm1kv(kv), attn_mask=attn_mask))
+
+    def _mlp_residual_path(self, x):
+        return self.ls2(self.mlp(self.norm2(x)))
+
+    def forward(self, q, kv, attn_mask=None):
+        q = self.drop_path1(
+            q,
+            residual_path=self._attn_residual_path,
+            residual_path_kwargs=dict(kv=kv, attn_mask=attn_mask),
+        )
+        q = self.drop_path2(q, self._mlp_residual_path)
+        return q
+
+
+class DecoderPerceiver(nn.Module):
+    def __init__(
+            self,
+            input_dim,
+            output_dim,
+            ndim,
+            dim,
+            depth,
+            num_heads,
+            unbatch_mode="dense_to_sparse_unpadded",
+            perc_dim=None,
+            perc_num_heads=None,
+            cond_dim=None,
+            init_weights="truncnormal002",
+            **kwargs,
+    ):
+        super().__init__(**kwargs)
+        perc_dim = perc_dim or dim
+        perc_num_heads = perc_num_heads or num_heads
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+        self.ndim = ndim
+        self.dim = dim
+        self.depth = depth
+        self.num_heads = num_heads
+        self.perc_dim = perc_dim
+        self.perc_num_heads = perc_num_heads
+        self.cond_dim = cond_dim
+        self.init_weights = init_weights
+        self.unbatch_mode = unbatch_mode
+
+        # input projection
+        self.input_proj = LinearProjection(input_dim, dim, init_weights=init_weights, optional=True)
+
+        # blocks
+        if cond_dim is None:
+            block_ctor = VitBlock
+        else:
+            block_ctor = partial(DitBlock, cond_dim=cond_dim)
+        self.blocks = Sequential(
+            *[
+                block_ctor(
+                    dim=dim,
+                    num_heads=num_heads,
+                    init_weights=init_weights,
+                )
+                for _ in range(depth)
+            ],
+        )
+
+        # prepare perceiver
+        self.pos_embed = ContinuousSincosEmbed(
+            dim=perc_dim,
+            ndim=ndim,
+        )
+        if cond_dim is None:
+            block_ctor = PerceiverBlock
+        else:
+            block_ctor = partial(DitPerceiverBlock, cond_dim=cond_dim)
+
+        # decoder
+        self.query_proj = nn.Sequential(
+            LinearProjection(perc_dim, perc_dim, init_weights=init_weights),
+            nn.GELU(),
+            LinearProjection(perc_dim, perc_dim, init_weights=init_weights),
+        )
+        self.perc = block_ctor(dim=perc_dim, kv_dim=dim, num_heads=perc_num_heads, init_weights=init_weights)
+        self.pred = nn.Sequential(
+            nn.LayerNorm(perc_dim, eps=1e-6),
+            LinearProjection(perc_dim, output_dim, init_weights=init_weights),
+        )
+
+    def forward(self, x, output_pos, condition=None):
+        # check inputs
+        assert x.ndim == 3, "expected shape (batch_size, num_latent_tokens, dim)"
+        assert output_pos.ndim == 3, "expected shape (batch_size, num_outputs, dim) num_outputs might be padded"
+        if condition is not None:
+            assert condition.ndim == 2, "expected shape (batch_size, cond_dim)"
+
+        # pass condition to DiT blocks
+        cond_kwargs = {}
+        if condition is not None:
+            cond_kwargs["cond"] = condition
+
+        # input projection
+        x = self.input_proj(x)
+
+        # apply blocks
+        x = self.blocks(x, **cond_kwargs)
+
+        # create query
+        query = self.pos_embed(output_pos)
+        query = self.query_proj(query)
+
+        x = self.perc(q=query, kv=x, **cond_kwargs)
+        x = self.pred(x)
+        if self.unbatch_mode == "dense_to_sparse_unpadded":
+            # dense to sparse where no padding needs to be considered
+            x = einops.rearrange(
+                x,
+                "batch_size seqlen dim -> (batch_size seqlen) dim",
+            )
+        elif self.unbatch_mode == "image":
+            # rearrange to square image
+            height = math.sqrt(x.size(1))
+            assert height.is_integer()
+            x = einops.rearrange(
+                x,
+                "batch_size (height width) dim -> batch_size dim height width",
+                height=int(height),
+            )
+        else:
+            raise NotImplementedError(f"invalid unbatch_mode '{self.unbatch_mode}'")
+
+        return x
+
+
 class LinearProjection(nn.Module):
     features: int
     use_bias: bool = True
@@ -75,7 +335,6 @@ class ContinuousSincosEmbed(nn.Module):
 class PrenormBlock(nn.Module):
     dim: int
     num_heads: int
-    init_weights: str = "torch"
     
     @nn.compact
     def __call__(self, x):
@@ -218,86 +477,29 @@ class DitPerceiverPoolingBlock(nn.Module):
         return x
 
 
-def batch_radius_graph_jax(x, r, max_num_neighbors=32, loop=True):
-    """JAX implementation of radius_graph with batch support
+def batch_k_nearest_neighbors(x, supernode_idxs, k):
+    """JAX implementation of k-nearest neighbors with batch support
     
     Args:
         x: Shape (batch_size, num_points, ndim)
-        r: Radius
-        max_num_neighbors: Maximum number of neighbors per node
-        loop: Whether to include self-loops
+        supernode_idxs: Shape (batch_size, num_supernodes) - Indices of supernodes
+        k: Number of nearest neighbors to consider
         
     Returns:
-        edge_index: Shape (2, batch_size, num_edges)
-    """
-    batch_size, num_points, ndim = x.shape
-    
-    # Ensure we have Python integers for fixed dimensions
-    num_points_int = int(num_points)
-    max_num_neighbors_int = int(max_num_neighbors)
-    
+        coords: Shape (batch_size, num_supernodes, k, 3) - Coordinates of k nearest neighbors for each supernode
+    """    
     def process_sample(sample_x):
         # Compute pairwise distances
         dists = jnp.sqrt(jnp.sum((sample_x[:, None, :] - sample_x[None, :, :]) ** 2, axis=-1))
+        dists_from_supernodes = dists[supernode_idxs]
         
-        # Create mask for points within radius
-        radius_mask = dists <= r
-        
-        # Handle self-loops
-        if not loop:
-            radius_mask = radius_mask & (jnp.arange(num_points_int)[:, None] != jnp.arange(num_points_int)[None, :])
-        
-        # Instead of using jnp.where, we'll convert the mask to a dense representation
-        # Create a mesh grid of all possible indices
-        row_indices = jnp.arange(num_points_int)[:, None].repeat(num_points_int, axis=1)
-        col_indices = jnp.arange(num_points_int)[None, :].repeat(num_points_int, axis=0)
-        
-        # Get the flat indices where radius_mask is True
-        flat_mask = radius_mask.flatten()
-        flat_row_indices = row_indices.flatten()
-        flat_col_indices = col_indices.flatten()
-        
-        # Use the mask to select valid indices
-        # This approach keeps shapes static, unlike jnp.where
-        valid_rows = jnp.where(flat_mask, flat_row_indices, -1)
-        valid_cols = jnp.where(flat_mask, flat_col_indices, -1)
-        
-        # Sort by distance if needed
-        if max_num_neighbors_int is not None:
-            # Flatten distances for sorting
-            flat_dists = dists.flatten()
-            
-            # Only consider valid distances (where mask is True)
-            valid_dists = jnp.where(flat_mask, flat_dists, jnp.inf)
-            
-            # Get indices sorted by distance
-            sorted_indices = jnp.argsort(valid_dists)
-            
-            # Take up to max_edges indices
-            max_edges = num_points_int * max_num_neighbors_int
-            sorted_indices = sorted_indices[:max_edges]
-            
-            # Use sorted indices to get rows and columns
-            valid_rows = valid_rows[sorted_indices]
-            valid_cols = valid_cols[sorted_indices]
-        
-        # Pad to a fixed size for batch processing
-        max_edges = num_points_int * max_num_neighbors_int
-        valid_rows = valid_rows[:max_edges]
-        valid_cols = valid_cols[:max_edges]
-        
-        # Pad with -1 to indicate invalid edges
-        padding = max_edges - len(valid_rows)
-        if padding > 0:
-            valid_rows = jnp.pad(valid_rows, (0, padding), constant_values=-1)
-            valid_cols = jnp.pad(valid_cols, (0, padding), constant_values=-1)
-        
-        return jnp.stack([valid_rows, valid_cols])
+        # Get indices of k nearest neighbors for each supernode
+        neighbor_idxs = jnp.argsort(dists_from_supernodes, axis=1)[:, :k]
+
+        return sample_x[neighbor_idxs]
     
     # Process each sample in the batch
-    edge_indices = jax.vmap(process_sample)(x)
-    
-    return edge_indices
+    return jax.vmap(process_sample)(x)
 
 
 def batch_segment_aggregation(src, idx, num_segments, reduce="mean"):
@@ -369,113 +571,34 @@ def batch_segment_aggregation(src, idx, num_segments, reduce="mean"):
 
 
 class SupernodePooling(nn.Module):
-    radius: float
     max_degree: int
     input_dim: int
     hidden_dim: int
-    ndim: int
-    max_supernodes: int  # New parameter for fixed supernode count
     init_weights: str = "torch"
     
     @nn.compact
-    def __call__(self, input_feat, input_pos, supernode_mask):
+    def __call__(self, input_pos, supernode_idxs):
         """
         Args:
-            input_feat: Shape (batch_size, num_points, input_dim)
             input_pos: Shape (batch_size, num_points, ndim)
-            supernode_mask: Shape (batch_size, num_points) - Boolean mask for supernodes
+            supernode_idxs: Shape (batch_size, num_supernodes) - Indices of supernodes
             
         Returns:
             x: Shape (batch_size, max_supernodes, hidden_dim)
         """
-        batch_size, num_points, _ = input_feat.shape
         
         # Radius graph - creates edges between nodes
-        input_edges = batch_radius_graph_jax(
+        supernode_neighbors_points = batch_k_nearest_neighbors(
             x=input_pos,
-            r=self.radius,
-            max_num_neighbors=self.max_degree,
-            loop=True,
-        )  # Shape: (2, batch_size, num_edges)
-        
-        # Filter edges to only include supernode edges (where destination is a supernode)
-        def filter_edges(edges, mask):
-            # edges: (2, num_edges), mask: (num_points,)
-            # Get indices of destination nodes (supernodes)
-            dst_idx = edges[0]  # Shape: (num_edges,)
-            
-            # We need to handle invalid indices (-1) from the radius_graph results
-            # Create a mask for valid indices
-            valid_idx = dst_idx >= 0  # Shape: (num_edges,)
-            
-            # Safely get values from the mask using maximum to clip negative indices to 0
-            # This avoids out-of-bounds indexing
-            clipped_dst_idx = jnp.maximum(dst_idx, 0)  # Shape: (num_edges,)
-            is_supernode = mask[clipped_dst_idx]  # Shape: (num_edges,)
-            
-            # Combine with valid_idx to ensure -1 indices are considered invalid regardless
-            is_valid_supernode = is_supernode & valid_idx  # Shape: (num_edges,)
-            
-            # Add dimension for broadcasting with edges
-            is_valid_supernode_expanded = is_valid_supernode[:, None]  # Shape: (num_edges, 1)
-            
-            # Filter edges - reshape for correct broadcasting
-            filtered_src = jnp.where(is_valid_supernode, edges[0], -1)  # Shape: (num_edges,)
-            filtered_dst = jnp.where(is_valid_supernode, edges[1], -1)  # Shape: (num_edges,)
-            
-            return jnp.stack([filtered_src, filtered_dst])
-        
-        # Apply filter to each batch
-        input_edges = jax.vmap(filter_edges)(input_edges, supernode_mask)
+            supernode_idxs=supernode_idxs,
+            k=self.max_degree,
+        )
         
         # Embed mesh
-        input_proj = LinearProjection(features=self.hidden_dim, init_weights=self.init_weights)
-        pos_embed = ContinuousSincosEmbed(dim=self.hidden_dim, ndim=self.ndim)
+        input_proj = LinearProjection(features=self.hidden_dim, init_weights=self.init_weights)(supernode_neighbors_points)
+        pos_embed = ContinuousSincosEmbed(dim=self.hidden_dim, ndim=self.ndim)(supernode_neighbors_points)
         
-        x = input_proj(input_feat) + pos_embed(input_pos)
-        
-        # Create message inputs for each batch
-        def create_messages(sample_x, sample_edges):
-            # sample_x: (num_points, hidden_dim)
-            # sample_edges: (2, max_edges)
-            
-            # Get valid edges (non-negative indices)
-            # Using boolean indexing directly will fail during tracing
-            all_src_idx = sample_edges[1]  # (max_edges,)
-            all_dst_idx = sample_edges[0]  # (max_edges,)
-            
-            # Create mask for valid edges
-            valid_mask = (all_dst_idx >= 0) & (all_src_idx >= 0)  # (max_edges,)
-            
-            # Convert negative indices to 0 (will be masked out later)
-            safe_src_idx = jnp.maximum(all_src_idx, 0)  # (max_edges,)
-            safe_dst_idx = jnp.maximum(all_dst_idx, 0)  # (max_edges,)
-            
-            # Get node features for source and destination
-            # Handle out-of-bounds indices by clamping to valid range
-            max_idx = sample_x.shape[0] - 1
-            safe_src_idx = jnp.minimum(safe_src_idx, max_idx)
-            safe_dst_idx = jnp.minimum(safe_dst_idx, max_idx)
-            
-            src_features = sample_x[safe_src_idx]  # (max_edges, hidden_dim)
-            dst_features = sample_x[safe_dst_idx]  # (max_edges, hidden_dim)
-            
-            # Concatenate features
-            message_features = jnp.concatenate([src_features, dst_features], axis=-1)  # (max_edges, 2*hidden_dim)
-            
-            # Apply mask - expand dimensions for broadcasting
-            valid_mask_expanded = valid_mask[:, None]  # (max_edges, 1)
-            masked_features = jnp.where(valid_mask_expanded, message_features, 0.0)  # (max_edges, 2*hidden_dim)
-            
-            # Create masked dst_idx for aggregation
-            masked_dst_idx = jnp.where(valid_mask, all_dst_idx, -1)  # (max_edges,)
-            
-            return masked_features, masked_dst_idx
-        
-        # Apply to each batch
-        message_inputs, dst_indices = jax.vmap(create_messages)(x, input_edges)
-        # message_inputs: (batch_size, max_edges, 2*hidden_dim)
-        # dst_indices: (batch_size, max_edges)
+        x = input_proj + pos_embed
         
         # Message passing network
         message_net = nn.Sequential([
@@ -483,40 +606,9 @@ class SupernodePooling(nn.Module):
             lambda x: nn.gelu(x),
             LinearProjection(features=self.hidden_dim, init_weights=self.init_weights),
         ])
-        
-        # Process messages with message network
-        processed_messages = jax.vmap(message_net)(message_inputs)
-        # processed_messages: (batch_size, max_edges, hidden_dim)
-        
-        # Create mask for valid messages (based on dst_indices >= 0)
-        valid_message_mask = (dst_indices >= 0).astype(jnp.float32)
-        # valid_message_mask: (batch_size, max_edges)
-        
-        # Add dimension for broadcasting
-        valid_message_mask = valid_message_mask[..., None]
-        # valid_message_mask: (batch_size, max_edges, 1)
-        
-        # Apply mask to zero out invalid messages
-        masked_messages = processed_messages * valid_message_mask
-        # masked_messages: (batch_size, max_edges, hidden_dim)
-        
-        # Compute number of supernodes per batch - used for masking, not sizing
-        num_supernodes = jnp.sum(supernode_mask, axis=1)
-        
-        # Use the fixed max_supernodes value instead of computing dynamically
-        # Aggregate messages to supernodes
-        x = batch_segment_aggregation(
-            src=masked_messages,
-            idx=dst_indices,
-            num_segments=self.max_supernodes,  # Use fixed parameter
-            reduce="mean"
-        )
-        
-        # Create mask for valid supernodes using fixed max_supernodes
-        supernode_valid_mask = jnp.arange(self.max_supernodes)[None, :] < num_supernodes[:, None]
-        
-        # Zero out invalid supernodes
-        x = x * supernode_valid_mask[:, :, None]
+
+        x = message_net(x)
+        x = jnp.mean(x, axis=-2)
         
         return x
 
@@ -544,29 +636,20 @@ class EncoderSupernodes(nn.Module):
     def setup(self):
         # Supernode pooling with fixed max_supernodes
         self.supernode_pooling = SupernodePooling(
-            radius=self.radius,
             max_degree=self.max_degree,
             input_dim=self.input_dim,
-            hidden_dim=self.gnn_dim,
-            ndim=self.ndim,
-            max_supernodes=self.max_supernodes,  # Pass the fixed parameter
+            hidden_dim=self.gnn_dim
         )
         
         # Encoder projection
         self.enc_proj = LinearProjection(
             features=self.enc_dim, 
-            init_weights=self.init_weights, 
+            init_weights=self.init_weights,
             optional=True
         )
         
         # Transformer blocks for conditioning
-        self.blocks = [
-            DitBlock(
-                dim=self.enc_dim, 
-                num_heads=self.enc_num_heads, 
-                cond_dim=self.cond_dim,
-                init_weights=self.init_weights
-            ) if self.cond_dim is not None else
+        self.enc_blocks = [
             PrenormBlock(
                 dim=self.enc_dim, 
                 num_heads=self.enc_num_heads, 
@@ -577,71 +660,42 @@ class EncoderSupernodes(nn.Module):
         
         # Perceiver pooling for conditioning
         if self.num_latent_tokens is not None:
-            if self.cond_dim is None:
-                self.perceiver = PerceiverPoolingBlock(
-                    dim=self.perc_dim,
-                    num_heads=self.perc_num_heads,
-                    num_query_tokens=self.num_latent_tokens,
-                    perceiver_kwargs=dict(
-                        kv_dim=self.enc_dim,
-                        init_weights=self.init_weights,
-                    ),
-                )
-            else:
-                self.perceiver = DitPerceiverPoolingBlock(
-                    dim=self.perc_dim,
-                    num_heads=self.perc_num_heads,
-                    num_query_tokens=self.num_latent_tokens,
-                    perceiver_kwargs=dict(
-                        kv_dim=self.enc_dim,
-                        cond_dim=self.cond_dim,
-                        init_weights=self.init_weights,
-                    ),
-                )
+            self.perceiver = PerceiverPoolingBlock(
+                dim=self.perc_dim,
+                num_heads=self.perc_num_heads,
+                num_query_tokens=self.num_latent_tokens,
+                perceiver_kwargs=dict(
+                    kv_dim=self.enc_dim,
+                    init_weights=self.init_weights,
+                ),
+            )
         else:
-            self.perceiver = None
-            
-        # Coordinate transformation components
-        if self.output_coord_dim is not None:
-            # Default coordinate encoder dimension if not provided
-            if self.coord_enc_dim is None:
-                self.coord_enc_dim = self.enc_dim
-            
-            # Combined feature and position encoder
-            self.coord_input_proj = LinearProjection(
-                features=self.coord_enc_dim,
+            self.perceiver = nn.Identity()
+
+
+        self.encoder_token = self.param(
+            'encoder_token',
+            nn.initializers.normal(stddev=0.02),
+            (1, 1, self.enc_dim)
+        )
+        
+        # Transformer blocks for coordinate transformation
+        self.coord_enc_blocks = [
+            PrenormBlock(
+                dim=self.coord_enc_dim, 
+                num_heads=self.coord_enc_num_heads, 
                 init_weights=self.init_weights
             )
-            
-            # Position embedding for coordinates
-            self.coord_pos_embed = ContinuousSincosEmbed(
-                dim=self.coord_enc_dim,
-                ndim=self.ndim
-            )
-            
-            # Transformer blocks for coordinate transformation
-            self.coord_blocks = [
-                DitBlock(
-                    dim=self.coord_enc_dim, 
-                    num_heads=self.coord_enc_num_heads, 
-                    cond_dim=self.cond_dim,
-                    init_weights=self.init_weights
-                ) if self.cond_dim is not None else
-                PrenormBlock(
-                    dim=self.coord_enc_dim, 
-                    num_heads=self.coord_enc_num_heads, 
-                    init_weights=self.init_weights
-                )
-                for _ in range(self.coord_enc_depth)
-            ]
-            
-            # Final projection to output coordinate dimensions
-            self.coord_output_proj = nn.Dense(
-                features=self.output_coord_dim,
-                kernel_init=nn.initializers.truncated_normal(stddev=0.02) # n.initializers.glorot_uniform() #
-            )
+            for _ in range(self.coord_enc_depth)
+        ]
+        
+        # Final projection to output coordinate dimensions
+        self.coord_output_proj = nn.Dense(
+            features=self.output_coord_dim,
+            kernel_init=nn.initializers.truncated_normal(stddev=0.02) # n.initializers.glorot_uniform() #
+        )
     
-    def __call__(self, input_feat_or_points, input_pos=None, supernode_mask=None, condition=None):
+    def __call__(self, points, supernode_idxs):
         """
         Args in two possible modes:
         Mode 1 (separate feature and position):
@@ -663,43 +717,12 @@ class EncoderSupernodes(nn.Module):
                - Without perceiver: (batch_size, num_supernodes, enc_dim)
             - coords: Transformed coordinates, shape (batch_size, num_points, output_coord_dim)
         """
-        # When using with UniversalAutoencoder in points-only mode,
-        # make sure we use a valid supernode mask with correct count
-        if input_pos is None:
-            # We're in "points-only" mode
-            points = input_feat_or_points
-            input_feat = points
-            input_pos = points
-            
-            # Create a mask where first max_supernodes points are supernodes
-            # This ensures a fixed number of supernodes compatible with our model
-            batch_size, num_points = points.shape[0], points.shape[1]
-            supernode_mask = jnp.zeros((batch_size, num_points), dtype=bool)
-            # valid_supernodes = jnp.minimum(num_points, self.max_supernodes)
-            supernode_mask = supernode_mask.at[:, :self.max_supernodes].set(True)
-        else:
-            # Standard mode with separate feature and position tensors
-            input_feat = input_feat_or_points
-        
-        # Check inputs
-        assert input_feat.ndim == 3, "expected tensor (batch_size, num_points, input_dim)"
-        assert input_pos.ndim == 3, "expected tensor (batch_size, num_points, ndim)"
-        assert input_feat.shape[0] == input_pos.shape[0], "batch dimensions must match"
-        assert input_feat.shape[1] == input_pos.shape[1], "number of points must match"
-        assert supernode_mask.ndim == 2, "supernode_mask should be a 2D boolean tensor (batch_size, num_points)"
-        assert supernode_mask.shape[0] == input_feat.shape[0], "batch dimensions must match"
-        assert supernode_mask.shape[1] == input_feat.shape[1], "number of points must match"
-        
-        if condition is not None:
-            assert condition.ndim == 2, "expected shape (batch_size, cond_dim)"
-            assert condition.shape[0] == input_feat.shape[0], "batch dimensions must match"
-        
+
         # ----- Conditioning branch -----
         # Supernode pooling
         x = self.supernode_pooling(
-            input_feat=input_feat,
-            input_pos=input_pos,
-            supernode_mask=supernode_mask,
+            input_points=points,
+            supernode_idxs=supernode_idxs,
         )
         
         # Project to encoder dimension
@@ -707,17 +730,11 @@ class EncoderSupernodes(nn.Module):
         
         # Apply transformer blocks
         for block in self.blocks:
-            if condition is not None:
-                x = block(x, cond=condition)
-            else:
-                x = block(x)
+            x = block(x)
         
         # Apply perceiver if needed
         if self.perceiver is not None:
-            if condition is not None:
-                x = self.perceiver(kv=x, cond=condition)
-            else:
-                x = self.perceiver(kv=x)
+            x = self.perceiver(kv=x)
         
         # ----- Coordinate transformation branch -----
         if self.output_coord_dim is not None:
