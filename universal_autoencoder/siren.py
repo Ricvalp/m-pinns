@@ -260,15 +260,6 @@ class LatentToModulation(nn.Module):
 class ModulatedSIREN(nn.Module):
     cfg: ConfigDict
 
-    # output_dim: int
-    # hidden_dim: int
-    # num_layers: int
-    # omega_0: float
-    # modulation_hidden_dim: int
-    # modulation_num_layers: int
-    # shift_modulate: bool = True
-    # scale_modulate: bool = True
-
     def setup(self):
         modulated_siren_cfg = self.cfg.modulated_siren_cfg
         self.num_layers = modulated_siren_cfg.num_layers
@@ -278,7 +269,8 @@ class ModulatedSIREN(nn.Module):
 
         self.modulator = LatentToModulation(
             input_dim=1,
-            layer_sizes=[modulated_siren_cfg.hidden_dim] * modulated_siren_cfg.modulation_num_layers,
+            layer_sizes=[modulated_siren_cfg.hidden_dim]
+            * modulated_siren_cfg.modulation_num_layers,
             num_modulation_layers=modulated_siren_cfg.num_layers - 1,
             modulation_dim=modulated_siren_cfg.hidden_dim,
             scale_modulate=modulated_siren_cfg.scale_modulate,

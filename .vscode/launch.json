@@ -200,6 +200,18 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}",
             },
+        },
+        {
+            "name": "test fit universal autoencoder",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/universal_autoencoder/test_fit_universal_autoencoder.py",
+            // "args": [
+            //     "--config=fit/config/fit_universal_autoencoder.py",
+            // ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+            },
         }
     ]
 }

@@ -44,6 +44,7 @@ class SupernodePooling(nn.Module):
     input_dim: int
     hidden_dim: int
     ndim: int
+
     @nn.compact
     def __call__(self, input_points, supernode_idxs):
         """
@@ -62,7 +63,9 @@ class SupernodePooling(nn.Module):
             k=self.max_degree,
         )
 
-        input_proj = LinearProjection(features=self.hidden_dim)(supernode_neighbors_points)
+        input_proj = LinearProjection(features=self.hidden_dim)(
+            supernode_neighbors_points
+        )
         pos_embed = ContinuousSincosEmbed(dim=self.hidden_dim, ndim=self.ndim)(
             supernode_neighbors_points
         )

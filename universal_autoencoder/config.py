@@ -9,7 +9,6 @@ def get_config():
     cfg.seed = 42
     cfg.figure_path = "./figures/" + str(datetime.now().strftime("%Y%m%d-%H%M%S"))
 
-
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # #  EncoderSupernodes  # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -33,8 +32,6 @@ def get_config():
     cfg.encoder_supernodes_cfg.ndim = 3
     cfg.encoder_supernodes_cfg.perc_depth = 4
 
-
-
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # #  SIREN  # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -48,7 +45,6 @@ def get_config():
     cfg.modulated_siren_cfg.modulation_num_layers = 4
     cfg.modulated_siren_cfg.shift_modulate = True
     cfg.modulated_siren_cfg.scale_modulate = False
-
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # #  Dataset  # # # # # # # # # # # # # # #

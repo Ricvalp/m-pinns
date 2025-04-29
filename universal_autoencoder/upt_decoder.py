@@ -2,8 +2,11 @@ import jax.numpy as jnp
 import einops
 from flax import linen as nn
 from typing import Optional
-from universal_autoencoder.transformers import PrenormBlock, ContinuousSincosEmbed, LinearProjection
-
+from universal_autoencoder.transformers import (
+    PrenormBlock,
+    ContinuousSincosEmbed,
+    LinearProjection,
+)
 
 
 class Mlp(nn.Module):
@@ -11,7 +14,6 @@ class Mlp(nn.Module):
     out_dim: int
     act_ctor: nn.Module = nn.gelu
     bias: bool = True
-
 
     def setup(self):
         self.fc1 = nn.Dense(
@@ -62,10 +64,14 @@ class PerceiverAttention(nn.Module):
             kernel_init=nn.initializers.normal(stddev=0.02),
         )
         self.q = nn.Dense(
-            self.dim, use_bias=self.bias, kernel_init=nn.initializers.normal(stddev=0.02)
+            self.dim,
+            use_bias=self.bias,
+            kernel_init=nn.initializers.normal(stddev=0.02),
         )
         self.proj = nn.Dense(
-            self.dim, use_bias=self.bias, kernel_init=nn.initializers.normal(stddev=0.02)
+            self.dim,
+            use_bias=self.bias,
+            kernel_init=nn.initializers.normal(stddev=0.02),
         )
 
     def __call__(self, q, kv):
@@ -117,8 +123,8 @@ class PerceiverBlock(nn.Module):
             num_heads=self.num_heads,
             bias=self.bias,
         )
-        self.ls1 = (
-            lambda x: x
+        self.ls1 = lambda x: (
+            x
             if self.layerscale is None
             else LayerScale(self.dim, init_scale=self.layerscale)
         )
@@ -131,8 +137,8 @@ class PerceiverBlock(nn.Module):
             out_dim=self.dim,
             act_ctor=self.act_ctor,
         )
-        self.ls2 = (
-            lambda x: x
+        self.ls2 = lambda x: (
+            x
             if self.layerscale is None
             else LayerScale(self.dim, init_scale=self.layerscale)
         )
@@ -178,10 +184,11 @@ class DecoderPerceiver(nn.Module):
         )
 
         # decoder
-        self.query_proj = nn.Sequential([
-            LinearProjection(self.perc_dim),
-            nn.gelu,
-            LinearProjection(self.perc_dim),
+        self.query_proj = nn.Sequential(
+            [
+                LinearProjection(self.perc_dim),
+                nn.gelu,
+                LinearProjection(self.perc_dim),
             ]
         )
         self.perc = PerceiverBlock(

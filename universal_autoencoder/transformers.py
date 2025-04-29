@@ -13,7 +13,7 @@ class LinearProjection(nn.Module):
     def __call__(self, x):
         if self.optional and x.shape[-1] == self.features:
             return x
-    
+
         return nn.Dense(
             features=self.features,
             use_bias=self.use_bias,
@@ -46,8 +46,8 @@ class ContinuousSincosEmbed(nn.Module):
             ]  # Keep dim for broadcasting (batch_size, num_points, 1)
 
             # Create embeddings for this dimension
-            emb_i = (
-                pos_i * emb.reshape(*([1] * (pos_i.ndim - 1)), half_emb_dim)
+            emb_i = pos_i * emb.reshape(
+                *([1] * (pos_i.ndim - 1)), half_emb_dim
             )  # (batch_size, num_points, 1, half_emb_dim)
             emb_i = jnp.concatenate(
                 [jnp.sin(emb_i), jnp.cos(emb_i)], axis=-1
