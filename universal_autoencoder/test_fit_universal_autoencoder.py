@@ -6,12 +6,15 @@ import numpy as np
 from flax.training import train_state
 from torch.utils.data import Dataset
 from pathlib import Path
+from functools import partial
 import jax
 import optax
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from sklearn.neighbors import KDTree
+import networkx as nx
 
 from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
 
@@ -24,20 +27,22 @@ def load_cfgs():
     cfg.figure_path = "figures/test_fit_universal_autoencoder"
 
     cfg.dataset = ml_collections.ConfigDict()
-    cfg.dataset.num_points = 10000
+    cfg.dataset.num_points = 2000
     cfg.dataset.disk_radius = 1.0
     cfg.dataset.num_supernodes = 32
+    cfg.dataset.nearest_neighbors_distance_matrix = 10
 
     cfg.train = ml_collections.ConfigDict()
-    cfg.train.batch_size = 16
+    cfg.train.batch_size = 64
     cfg.train.lr = 1e-5
-    cfg.train.num_steps = 10000
-
+    cfg.train.num_steps = 50000
+    cfg.train.reg = "geodesic_preservation"
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.use = True
-    cfg.wandb.wandb_log_every = 1
+    cfg.wandb.wandb_log_every = 10
 
     cfg.profiler = ml_collections.ConfigDict()
+    cfg.profiler.use = True
     cfg.profiler.log_dir = "universal_autoencoder/profiler/"
     cfg.profiler.start_step = 20
     cfg.profiler.end_step = 30
@@ -86,14 +91,19 @@ def main(_):
     cfg = load_cfgs()
 
     Path(cfg.figure_path).mkdir(parents=True, exist_ok=True)
-    Path(cfg.profiler.log_dir).mkdir(parents=True, exist_ok=True)
+    
+    if cfg.profiler.use:
+        Path(cfg.profiler.log_dir).mkdir(parents=True, exist_ok=True)
 
     key = jax.random.PRNGKey(cfg.seed)
     key, params_subkey, supernode_subkey = jax.random.split(key, 3)
+    dataset=HalfSphereDataset(
+            num_points=cfg.dataset.num_points, 
+            num_supernodes=cfg.dataset.num_supernodes,
+            nearest_neighbors_distance_matrix=cfg.dataset.nearest_neighbors_distance_matrix
+        )
     data_loader = DataLoader(
-        dataset=HalfSphereDataset(
-            num_points=cfg.dataset.num_points, num_supernodes=cfg.dataset.num_supernodes
-        ),
+        dataset=dataset,
         batch_size=cfg.train.batch_size,
         shuffle=True,
         num_workers=8,
@@ -112,11 +122,46 @@ def main(_):
     else:
         wandb_id = "no_wandb_" + str(cfg.seed)
 
-    def loss_fn(params, batch):
-        points, supernode_idxs = batch
-        pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
-        recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-        return recon_loss
+    @partial(jax.vmap, in_axes=(None, 0))
+    def geodesic_preservation_loss(distances_matrix, z):
+        # Compute pairwise Euclidean distances in latent space
+        z_diff = z[:, None, :] - z[None, :, :]
+        z_dist = jnp.sqrt(jnp.sum(z_diff**2, axis=-1) + 1e-8)
+        z_dist = z_dist / jnp.mean(z_dist)
+        geodesic_dist = distances_matrix / jnp.mean(distances_matrix)
+        return jnp.mean((z_dist - geodesic_dist) ** 2)
+
+    def riemannian_metric_loss(params, key):
+        d = lambda x: self.decoder_apply_fn({"params": params["D"]}, x)
+        noise = (
+            jax.random.normal(key, shape=params["points"].shape)
+            * self.noise_scale_riemannian
+        )
+        points = params["points"] + noise
+        J = vmap(jax.jacfwd(d))(points)
+        J_T = jnp.transpose(J, (0, 2, 1))
+        g = jnp.matmul(J_T, J)
+        g_inv = jnp.linalg.inv(g)
+        return jnp.mean(jnp.absolute(g)) + 0.1 * jnp.mean(jnp.absolute(g_inv))
+
+    distance_matrix = dataset.distances_matrix
+
+    if cfg.train.reg == "geodesic_preservation":
+        def loss_fn(params, batch):
+            points, supernode_idxs = batch
+            pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
+            recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
+            return recon_loss + geodesic_preservation_loss(distance_matrix, coords).mean()
+        
+    elif cfg.train.reg == "none":
+        def loss_fn(params, batch):
+            points, supernode_idxs = batch
+            pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
+            recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
+            return recon_loss
+    
+    else:
+        raise ValueError(f"Invalid regularization method: {cfg.train.reg}")
 
     @jax.jit
     def train_step(state, batch):
@@ -151,7 +196,8 @@ def main(_):
 
     for _ in progress_bar:
 
-        # set_profiler(cfg.profiler, step, cfg.profiler.log_dir)
+        if cfg.profiler.use:
+            set_profiler(cfg.profiler, step, cfg.profiler.log_dir)
 
         try:
             batch = next(data_loader_iter)
@@ -185,14 +231,76 @@ def main(_):
         wandb.log({"reconstruction_samples": wandb.Image(f"figures/test_fit_universal_autoencoder/reconstruction_samples.png")})
 
 
+
+def create_graph(
+    pts,
+    nearest_neighbors,
+):
+    """
+
+    Create a graph from the points.
+
+    Args:
+        pts (np.ndarray): The points
+        n (int): The number of nearest neighbors
+        connectivity (np.ndarray): The connectivity of the mesh
+
+    Returns:
+        G (nx.Graph): The graph
+
+    """
+
+    # Create a n-NN graph
+    tree = KDTree(pts)
+    G = nx.Graph()
+
+    # Add nodes to the graph
+    for i, point in enumerate(pts):
+        G.add_node(i, pos=point)
+
+    # Add edges to the graph
+    logging.info("Building the graph...")
+    distances, indices = tree.query(
+        pts, nearest_neighbors + 1
+    )  # n+1 because the point itself is included
+
+    for i in range(len(pts)):
+        for j in range(
+            1, nearest_neighbors + 1
+        ):  # start from 1 to exclude the point itself
+            neighbor_index = indices[i, j]
+            distance = distances[i, j]
+            G.add_edge(i, neighbor_index, weight=distance)
+
+    logging.info(f"Graph created with {len(G.nodes)} nodes and {len(G.edges)} edges")
+
+    return G
+
+
+def calculate_distance_matrix_single_process(pts, nearest_neighbors):
+    logging.info(f"Calculating distances for {len(pts)} points")
+    G = create_graph(pts=pts, nearest_neighbors=nearest_neighbors)
+    # Check that graph is a single connected component
+    if not nx.is_connected(G):
+        raise ValueError(
+            f"The graph is not a single connected component"
+        )
+    # distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
+    distances = dict(nx.all_pairs_dijkstra_path_length(G, cutoff=None))
+    distances_matrix = np.zeros((len(pts), len(pts)))
+    for j in range(len(pts)):
+        for k in range(len(pts)):
+            distances_matrix[j, k] = distances[j][k]
+    logging.info(f"Finished calculating distances")
+    return distances_matrix
+
+
 class HalfSphereDataset(Dataset):
-    def __init__(self, num_points, num_supernodes):
+    def __init__(self, num_points, num_supernodes, nearest_neighbors_distance_matrix):
         self.num_points = num_points
         self.num_supernodes = num_supernodes
-        theta = np.random.uniform(0, jnp.pi / 2, (num_points, 1))
+        theta = np.random.uniform(0, jnp.pi/2, (num_points, 1))
         phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
-
-
 
         # Generate points on a sphere
         self.points = np.concatenate(
@@ -200,7 +308,7 @@ class HalfSphereDataset(Dataset):
             axis=-1,
         )
 
-        
+        self.distances_matrix = calculate_distance_matrix_single_process(self.points, nearest_neighbors_distance_matrix)
 
         # Generate random supernode indices
         self.random_supernode_idxs = []
@@ -235,14 +343,44 @@ class HalfSphereDataset(Dataset):
         # Apply rotation
         return (R @ self.points.T).T
 
+    def get_rotated_scaled_points(self):
+
+        # Generate random rotation matrix
+        theta = np.random.uniform(0, 2*np.pi)
+        phi = np.random.uniform(0, 2*np.pi) 
+        psi = np.random.uniform(0, 2*np.pi)
+        scale = np.random.uniform(0.5, 1.5)
+
+        # Rotation matrix around x axis
+        Rx = np.array([[1, 0, 0],
+                      [0, np.cos(theta), -np.sin(theta)],
+                      [0, np.sin(theta), np.cos(theta)]])
+
+        # Rotation matrix around y axis  
+        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
+                      [0, 1, 0],
+                      [-np.sin(phi), 0, np.cos(phi)]])
+
+        # Rotation matrix around z axis
+        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
+                      [np.sin(psi), np.cos(psi), 0],
+                      [0, 0, 1]])
+
+        # Combined rotation matrix
+        R = Rz @ Ry @ Rx
+
+        # Apply rotation
+        return (scale * R @ self.points.T).T
+
 
     def __len__(self):
         return 100000000 # self.num_points
 
     def __getitem__(self, idx):
         supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
-        rotated_points = self.get_rotated_points()
-        return rotated_points, supernode_idxs
+        # points = self.get_rotated_points()
+        points = self.get_rotated_scaled_points()
+        return points, supernode_idxs
 
 
 def numpy_collate(batch):
@@ -330,7 +468,6 @@ def test_reconstruction(state, data_loader, num_samples=5):
         scatter = ax3.scatter(
             coords_np[i, :, 0], 
             coords_np[i, :, 1],
-            cmap='viridis', 
             alpha=0.8,
             s=10
         )
@@ -338,7 +475,6 @@ def test_reconstruction(state, data_loader, num_samples=5):
         ax3.set_xlabel('X')
         ax3.set_ylabel('Y')
         ax3.set_aspect('equal')
-        fig.colorbar(scatter, ax=ax3, label='Point Index')
     
     plt.tight_layout()
     plt.savefig(f"figures/test_fit_universal_autoencoder/reconstruction_samples.png", dpi=300)
