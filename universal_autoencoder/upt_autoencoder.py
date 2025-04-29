@@ -41,7 +41,7 @@ class UniversalAutoencoder(nn.Module):
         # Use the transformed coordinates with the SIREN network
         out = self.siren(coords, conditioning)
 
-        return out
+        return out, coords, conditioning
 
 
 def test_universal_autoencoder(cfg):

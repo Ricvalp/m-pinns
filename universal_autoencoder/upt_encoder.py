@@ -130,7 +130,7 @@ class EncoderSupernodes(nn.Module):
                 ),
             )
         else:
-            self.perceiver = nn.Identity()
+            self.perceiver = lambda kv: kv
 
         self.coord_encoder = DecoderPerceiver(
             output_dim=encoder_supernodes_cfg.output_coord_dim,
