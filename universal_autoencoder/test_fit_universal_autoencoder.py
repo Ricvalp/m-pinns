@@ -17,7 +17,7 @@ from sklearn.neighbors import KDTree
 import networkx as nx
 
 from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
-
+from universal_autoencoder.siren import ModulatedSIREN
 
 def load_cfgs():
     """Load configuration from file."""
@@ -27,7 +27,7 @@ def load_cfgs():
     cfg.figure_path = "figures/test_fit_universal_autoencoder"
 
     cfg.dataset = ml_collections.ConfigDict()
-    cfg.dataset.num_points = 2000
+    cfg.dataset.num_points = 1000
     cfg.dataset.disk_radius = 1.0
     cfg.dataset.num_supernodes = 32
     cfg.dataset.nearest_neighbors_distance_matrix = 10
@@ -36,7 +36,8 @@ def load_cfgs():
     cfg.train.batch_size = 64
     cfg.train.lr = 1e-5
     cfg.train.num_steps = 50000
-    cfg.train.reg = "geodesic_preservation"
+    cfg.train.reg = "geo+riemannian"
+    cfg.train.noise_scale_riemannian = 0.01
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.use = True
     cfg.wandb.wandb_log_every = 10
@@ -122,23 +123,28 @@ def main(_):
     else:
         wandb_id = "no_wandb_" + str(cfg.seed)
 
+    model = UniversalAutoencoder(cfg=cfg)
+    decoder = ModulatedSIREN(cfg=cfg)
+    decoder_apply_fn = decoder.apply
+
+    decoder_apply_fn = model.apply
+
     @partial(jax.vmap, in_axes=(None, 0))
     def geodesic_preservation_loss(distances_matrix, z):
-        # Compute pairwise Euclidean distances in latent space
         z_diff = z[:, None, :] - z[None, :, :]
         z_dist = jnp.sqrt(jnp.sum(z_diff**2, axis=-1) + 1e-8)
         z_dist = z_dist / jnp.mean(z_dist)
         geodesic_dist = distances_matrix / jnp.mean(distances_matrix)
         return jnp.mean((z_dist - geodesic_dist) ** 2)
 
-    def riemannian_metric_loss(params, key):
-        d = lambda x: self.decoder_apply_fn({"params": params["D"]}, x)
+    def riemannian_metric_loss(params, latent, coords, key):
+        d = lambda x: decoder_apply_fn({"params": params["siren"]}, x, latent)
         noise = (
-            jax.random.normal(key, shape=params["points"].shape)
-            * self.noise_scale_riemannian
+            jax.random.normal(key, shape=coords.shape)
+            * cfg.train.noise_scale_riemannian
         )
-        points = params["points"] + noise
-        J = vmap(jax.jacfwd(d))(points)
+        coords = coords + noise
+        J = jax.vmap(jax.jacfwd(d))(coords)
         J_T = jnp.transpose(J, (0, 2, 1))
         g = jnp.matmul(J_T, J)
         g_inv = jnp.linalg.inv(g)
@@ -146,15 +152,25 @@ def main(_):
 
     distance_matrix = dataset.distances_matrix
 
+    if cfg.train.reg == "geo+riemannian":
+        def loss_fn(params, batch, key):
+            points, supernode_idxs = batch
+            pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
+            recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
+            return (recon_loss +
+                    geodesic_preservation_loss(distance_matrix, coords).mean() + 
+                    riemannian_metric_loss(params, conditioning, coords, key)
+                    )
+
     if cfg.train.reg == "geodesic_preservation":
-        def loss_fn(params, batch):
+        def loss_fn(params, batch, key):
             points, supernode_idxs = batch
             pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
             recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
             return recon_loss + geodesic_preservation_loss(distance_matrix, coords).mean()
         
     elif cfg.train.reg == "none":
-        def loss_fn(params, batch):
+        def loss_fn(params, batch, key):
             points, supernode_idxs = batch
             pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
             recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
@@ -164,8 +180,8 @@ def main(_):
         raise ValueError(f"Invalid regularization method: {cfg.train.reg}")
 
     @jax.jit
-    def train_step(state, batch):
-        my_loss = lambda params: loss_fn(params, batch)
+    def train_step(state, batch, key):
+        my_loss = lambda params: loss_fn(params, batch, key)
         loss, grads = jax.value_and_grad(my_loss)(state.params)
         state = state.apply_gradients(grads=grads)
         return state, loss, grads
@@ -178,8 +194,6 @@ def main(_):
     supernode_idxs = jax.random.randint(
         supernode_subkey, (batch_size, num_supernodes), 0, num_points
     )
-    # Initialize model
-    model = UniversalAutoencoder(cfg=cfg)
 
     # Initialize parameters
     init_points, supernode_idxs = next(iter(data_loader))
@@ -201,8 +215,8 @@ def main(_):
 
         try:
             batch = next(data_loader_iter)
-
-            state, loss, grads = train_step(state, batch)
+            key, subkey = jax.random.split(key)
+            state, loss, grads = train_step(state, batch, subkey)
 
             if step % cfg.wandb.wandb_log_every == 0:
 
