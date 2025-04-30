@@ -15,9 +15,12 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.neighbors import KDTree
 import networkx as nx
+import os
+from flax.training import checkpoints
 
 from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
 from universal_autoencoder.siren import ModulatedSIREN
+
 
 def load_cfgs():
     """Load configuration from file."""
@@ -35,12 +38,31 @@ def load_cfgs():
     cfg.train = ml_collections.ConfigDict()
     cfg.train.batch_size = 64
     cfg.train.lr = 1e-5
-    cfg.train.num_steps = 50000
-    cfg.train.reg = "geo+riemannian"
+    cfg.train.num_steps = 100000
+    cfg.train.reg = "geo+riemannian" # "geodesic_preservation" # 
     cfg.train.noise_scale_riemannian = 0.01
+
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # Checkpoint # # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+    cfg.checkpoint = ml_collections.ConfigDict()
+    cfg.checkpoint.path = "universal_autoencoder/checkpoints"
+    cfg.checkpoint.save_every = 20000
+    cfg.checkpoint.keep = 2
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # Wandb # # # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.use = True
     cfg.wandb.wandb_log_every = 10
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # Profiler  # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.profiler = ml_collections.ConfigDict()
     cfg.profiler.use = True
@@ -127,8 +149,6 @@ def main(_):
     decoder = ModulatedSIREN(cfg=cfg)
     decoder_apply_fn = decoder.apply
 
-    decoder_apply_fn = model.apply
-
     @partial(jax.vmap, in_axes=(None, 0))
     def geodesic_preservation_loss(distances_matrix, z):
         z_diff = z[:, None, :] - z[None, :, :]
@@ -137,14 +157,12 @@ def main(_):
         geodesic_dist = distances_matrix / jnp.mean(distances_matrix)
         return jnp.mean((z_dist - geodesic_dist) ** 2)
 
-    def riemannian_metric_loss(params, latent, coords, key):
-        d = lambda x: decoder_apply_fn({"params": params["siren"]}, x, latent)
-        noise = (
-            jax.random.normal(key, shape=coords.shape)
-            * cfg.train.noise_scale_riemannian
+    @partial(jax.vmap, in_axes=(None, 0, 0))
+    def riemannian_metric_loss(params, latent, coords):
+        d = lambda x: decoder_apply_fn(
+            {"params": params["siren"]}, x, latent
         )
-        coords = coords + noise
-        J = jax.vmap(jax.jacfwd(d))(coords)
+        J = jax.vmap(jax.jacfwd(d))(coords)[:, 0, :, :]
         J_T = jnp.transpose(J, (0, 2, 1))
         g = jnp.matmul(J_T, J)
         g_inv = jnp.linalg.inv(g)
@@ -152,29 +170,24 @@ def main(_):
 
     distance_matrix = dataset.distances_matrix
 
-    if cfg.train.reg == "geo+riemannian":
-        def loss_fn(params, batch, key):
-            points, supernode_idxs = batch
-            pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
-            recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-            return (recon_loss +
-                    geodesic_preservation_loss(distance_matrix, coords).mean() + 
-                    riemannian_metric_loss(params, conditioning, coords, key)
-                    )
 
-    if cfg.train.reg == "geodesic_preservation":
-        def loss_fn(params, batch, key):
+    if cfg.train.reg == "geo+riemannian":
+
+    elif cfg.train.reg == "geodesic_preservation":
+        def geo_loss_fn(params, batch, key, lamb=1.0):
             points, supernode_idxs = batch
             pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
             recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-            return recon_loss + geodesic_preservation_loss(distance_matrix, coords).mean()
+
+            geodesic_loss = geodesic_preservation_loss(distance_matrix, coords).mean()
+            return recon_loss + lamb * geodesic_loss, (recon_loss, geodesic_loss)
         
     elif cfg.train.reg == "none":
-        def loss_fn(params, batch, key):
+        def no_reg_loss_fn(params, batch, key, lamb=1.0):
             points, supernode_idxs = batch
             pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
             recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-            return recon_loss
+            return recon_loss, None
     
     else:
         raise ValueError(f"Invalid regularization method: {cfg.train.reg}")
@@ -182,9 +195,9 @@ def main(_):
     @jax.jit
     def train_step(state, batch, key):
         my_loss = lambda params: loss_fn(params, batch, key)
-        loss, grads = jax.value_and_grad(my_loss)(state.params)
+        (loss, aux), grads = jax.value_and_grad(my_loss, has_aux=True)(state.params)
         state = state.apply_gradients(grads=grads)
-        return state, loss, grads
+        return state, loss, aux, grads
 
     batch_size = cfg.train.batch_size
     num_points = cfg.dataset.num_points
@@ -216,16 +229,37 @@ def main(_):
         try:
             batch = next(data_loader_iter)
             key, subkey = jax.random.split(key)
-            state, loss, grads = train_step(state, batch, subkey)
+            state, loss, aux, grads = train_step(state, batch, subkey)
 
             if step % cfg.wandb.wandb_log_every == 0:
 
-                log_dict = {
-                    "loss": loss,
-                    "step": step,
-                }
+                if cfg.train.reg == "geo+riemannian":
+                    log_dict = {
+                        "loss": loss,
+                        "step": step,
+                        "recon_loss": aux[0],
+                        "geodesic_loss": aux[1],
+                        "riemannian_loss": aux[2],
+                    }
+                elif cfg.train.reg == "geodesic_preservation":
+                    log_dict = {
+                        "loss": loss,
+                        "step": step,
+                        "recon_loss": aux[0],
+                        "geodesic_loss": aux[1],
+                    }
+                elif cfg.train.reg == "none":
+                    log_dict = {
+                        "loss": loss,
+                        "step": step,
+
+                    }
+
                 if cfg.wandb.use:
                     wandb.log(log_dict, step=step)
+
+            if step % cfg.checkpoint.save_every == 0:
+                save_checkpoint(state, cfg.checkpoint.path, keep=cfg.checkpoint.keep)
 
             progress_bar.set_postfix(loss=float(loss))
 
@@ -235,15 +269,18 @@ def main(_):
             
             data_loader_iter = iter(data_loader)
     
+    save_checkpoint(state, cfg.checkpoint.path, keep=cfg.checkpoint.keep)
+
+
+
     # Add test reconstruction after training
     print("Testing reconstruction...")
-    test_mse = test_reconstruction(state, data_loader)
+    test_mse = test_reconstruction(state, data_loader, decoder_apply_fn)
     
     if cfg.wandb.use:
         wandb.log({"final_reconstruction_mse": test_mse})
         # Upload the reconstruction image to wandb
         wandb.log({"reconstruction_samples": wandb.Image(f"figures/test_fit_universal_autoencoder/reconstruction_samples.png")})
-
 
 
 def create_graph(
@@ -420,7 +457,7 @@ def count_parameters(params):
     return sum(x.size for x in jax.tree_util.tree_leaves(params))
 
 
-def test_reconstruction(state, data_loader, num_samples=5):
+def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5):
     """Test the reconstruction ability of the model and visualize results in 3D.
     
     Args:
@@ -434,19 +471,34 @@ def test_reconstruction(state, data_loader, num_samples=5):
     
     # Generate reconstructions
     reconstructions, coords, conditioning = state.apply_fn({"params": state.params}, points, supernode_idxs)
-    
+
+    # Calculate Riemannian metric determinant
+    @partial(jax.vmap, in_axes=(None, 0, 0))
+    def riemannian_metric_determinant(params, latent, coords):
+        d = lambda x: decoder_apply_fn(
+            {"params": params["siren"]}, x, latent
+        )
+        J = jax.vmap(jax.jacfwd(d))(coords)[:, 0, :, :]
+        J_T = jnp.transpose(J, (0, 2, 1))
+        g = jnp.matmul(J_T, J)
+        g_inv = jnp.linalg.inv(g)
+        return jnp.linalg.det(g), jnp.linalg.det(g_inv)
+
+    det_g, det_g_inv = riemannian_metric_determinant(state.params, conditioning, coords)
+
     # Convert to numpy for plotting
     points_np = np.array(points)
     reconstructions_np = np.array(reconstructions)
     coords_np = np.array(coords)
+    det_g_np = np.array(det_g)
+    det_g_inv_np = np.array(det_g_inv)
     
     # Visualize the first num_samples examples
-    n = min(num_samples, len(points))
-    fig = plt.figure(figsize=(15, 5*n))
+    fig = plt.figure(figsize=(15, 5*num_samples))
     
-    for i in range(n):
+    for i in range(num_samples):
         # Original points
-        ax1 = fig.add_subplot(n, 3, 3*i+1, projection='3d')
+        ax1 = fig.add_subplot(num_samples, 4, 4*i+1, projection='3d')
         ax1.scatter(
             points_np[i, :, 0], 
             points_np[i, :, 1], 
@@ -462,7 +514,7 @@ def test_reconstruction(state, data_loader, num_samples=5):
         ax1.set_zlim([-1.1, 1.1])
         
         # Reconstructed points
-        ax2 = fig.add_subplot(n, 3, 3*i+2, projection='3d')
+        ax2 = fig.add_subplot(num_samples, 4, 4*i+2, projection='3d')
         ax2.scatter(
             reconstructions_np[i, :, 0], 
             reconstructions_np[i, :, 1], 
@@ -476,12 +528,13 @@ def test_reconstruction(state, data_loader, num_samples=5):
         ax2.set_xlim([-1.1, 1.1])
         ax2.set_ylim([-1.1, 1.1])
         ax2.set_zlim([-1.1, 1.1])
-        
+
         # Learned coordinates
-        ax3 = fig.add_subplot(n, 3, 3*i+3)
+        ax3 = fig.add_subplot(num_samples, 4, 4*i+3)
         scatter = ax3.scatter(
             coords_np[i, :, 0], 
             coords_np[i, :, 1],
+            c=det_g_inv_np[i],
             alpha=0.8,
             s=10
         )
@@ -489,6 +542,17 @@ def test_reconstruction(state, data_loader, num_samples=5):
         ax3.set_xlabel('X')
         ax3.set_ylabel('Y')
         ax3.set_aspect('equal')
+        plt.colorbar(scatter, ax=ax3, label='det(g^{-1})')
+
+        ax4 = fig.add_subplot(num_samples, 4, 4*i+4)
+        scatter = ax4.scatter(
+            coords_np[i, :, 0], 
+            coords_np[i, :, 1],
+            c=det_g_np[i],
+            alpha=0.8,
+            s=10
+        )
+        plt.colorbar(scatter, ax=ax4, label='det(g)')
     
     plt.tight_layout()
     plt.savefig(f"figures/test_fit_universal_autoencoder/reconstruction_samples.png", dpi=300)
@@ -499,6 +563,14 @@ def test_reconstruction(state, data_loader, num_samples=5):
     print(f"Reconstruction MSE: {mse:.6f}")
     
     return mse
+
+
+def save_checkpoint(state, path, keep=5):
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
+    step = int(state.step)
+    checkpoints.save_checkpoint(Path(path).absolute(), state, step=step, keep=keep)
 
 
 if __name__ == "__main__":
