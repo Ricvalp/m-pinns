@@ -171,7 +171,34 @@ def main(_):
     distance_matrix = dataset.distances_matrix
 
 
+
+
+
+
+
+
+
+
+
+
+
+
     if cfg.train.reg == "geo+riemannian":
+        def geo_riemann_loss_fn(params, batch, key, lamb=1.0):
+
+            points, supernode_idxs = batch
+            pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
+            recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
+
+            noise = (
+                jax.random.normal(key, shape=coords.shape)
+                * cfg.train.noise_scale_riemannian
+            )
+
+            geodesic_loss = geodesic_preservation_loss(distance_matrix, coords).mean()
+            riemannian_loss = riemannian_metric_loss(params, conditioning, coords + noise).mean()
+
+            return recon_loss + lamb * (geodesic_loss + riemannian_loss), (recon_loss, geodesic_loss, riemannian_loss)
 
     elif cfg.train.reg == "geodesic_preservation":
         def geo_loss_fn(params, batch, key, lamb=1.0):
