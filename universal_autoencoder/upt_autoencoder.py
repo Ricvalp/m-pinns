@@ -86,21 +86,21 @@ def test_universal_autoencoder(cfg):
     return output
 
 
-_TASK_FILE = config_flags.DEFINE_config_file(
-    "config", default="universal_autoencoder/config.py"
-)
+# _TASK_FILE = config_flags.DEFINE_config_file(
+#     "config", default="universal_autoencoder/config.py"
+# )
 
 
-def load_cfgs(_TASK_FILE):
-    """Load configuration from file."""
-    cfg = _TASK_FILE.value
-    return cfg
+# def load_cfgs(_TASK_FILE):
+#     """Load configuration from file."""
+#     cfg = _TASK_FILE.value
+#     return cfg
 
 
-def main(_):
-    cfg = load_cfgs(_TASK_FILE)
-    test_universal_autoencoder(cfg)
+# def main(_):
+#     cfg = load_cfgs(_TASK_FILE)
+#     test_universal_autoencoder(cfg)
 
 
-if __name__ == "__main__":
-    app.run(main)
+# if __name__ == "__main__":
+#     app.run(main)

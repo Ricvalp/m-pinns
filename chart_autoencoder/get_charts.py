@@ -374,6 +374,47 @@ def load_charts(
     )
 
 
+
+def load_charts3d(
+    charts_path: Union[str, Path],
+) -> Tuple[
+    List[jnp.ndarray],
+    Dict[Tuple[int, int], jnp.ndarray],
+    Dict[Tuple[int, int], Tuple[List[int], List[int]]],
+]:
+    """Load charts from a folder.
+
+    Args:
+        charts_path (Union[str, Path]): The path to the folder where the charts are stored.
+
+    Returns:
+        List[np.ndarray]: The loaded charts.
+        Dict[Tuple[int, int], jnp.ndarray]: The loaded boundaries.
+        Dict[Tuple[int, int], Tuple[List[int], List[int]]]: The loaded boundary indices.
+        Dict[int, jnp.ndarray]: The loaded 2D charts.
+    """
+
+    logging.info(f"Loading charts and boundaries from {charts_path}...")
+
+    with open(charts_path + "/charts.pkl", "rb") as f:
+        loaded_charts = pickle.load(f)
+
+    with open(charts_path + "/boundaries.pkl", "rb") as f:
+        loaded_boundaries = pickle.load(f)
+
+    with open(charts_path + "/boundary_indices.pkl", "rb") as f:
+        loaded_boundary_indices = pickle.load(f)
+    with open(charts_path + "/charts_idxs.pkl", "rb") as f:
+        loaded_charts_idxs = pickle.load(f)
+
+    return (
+        loaded_charts,
+        loaded_charts_idxs,
+        loaded_boundaries,
+        loaded_boundary_indices,
+    )
+
+
 def save_charts(
     charts_path: Union[str, Path],
     charts: List[np.ndarray],

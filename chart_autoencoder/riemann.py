@@ -2,11 +2,17 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from jax import vmap
-
+from flax.training import checkpoints
+import pickle
 from pathlib import Path
+import optax
+from flax import linen as nn
+from flax.training import train_state
 
 from chart_autoencoder.models import Decoder, Encoder
 from chart_autoencoder.utils import ModelCheckpoint
+
+from universal_autoencoder import UniversalAutoencoder, ModulatedSIREN
 
 
 class InducedRiemannianMetric(nn.Module):
@@ -46,56 +52,6 @@ def get_metric(phi, inverse=False):
         g_phi = InducedRiemannianMetric(phi=phi)
     g_phi_fn = lambda z: g_phi.apply({}, z)
     return jax.jit(g_phi_fn)
-
-
-# def get_metric_tensor_and_sqrt_det_g(cfg, step, inverse=False):
-
-#     checkpointer = ModelCheckpoint(
-#         Path(cfg.checkpoint.checkpoint_path).absolute(), overwrite=False
-#     )
-#     params = checkpointer.load_checkpoint(step=step)
-
-#     encoder_params = params["E"]
-#     decoder_params = params["D"]
-
-#     n_hidden = cfg.model.n_hidden
-#     n_charts = jax.tree_util.tree_leaves(encoder_params)[0].shape[0]
-
-#     encoder = Encoder(
-#         n_hidden=n_hidden,
-#         n_latent=2,
-#     )
-#     decoder = Decoder(
-#         n_hidden=n_hidden,
-#         n_out=3,
-#     )
-
-#     d_params = [
-#         jax.tree_util.tree_map(lambda p: p[i], decoder_params) for i in range(n_charts)
-#     ]
-#     e_params = [
-#         jax.tree_util.tree_map(lambda p: p[i], encoder_params) for i in range(n_charts)
-#     ]
-
-#     def make_decoder_fn(d_param):
-#         return lambda x: decoder.apply({"params": d_param}, x)
-
-#     phis = [make_decoder_fn(d_param) for d_param in d_params]
-
-#     def make_encoder_fn(e_param):
-#         return lambda x: encoder.apply({"params": e_param}, x)
-
-#     encoder_fns = [make_encoder_fn(e_param) for e_param in e_params]
-
-#     sqrt_det_g_phis = [get_sqrt_det_g(phi) for phi in phis]
-#     induced_metrics = [get_metric(phi, inverse=inverse) for phi in phis]
-
-#     return (
-#         induced_metrics,
-#         sqrt_det_g_phis,
-#         encoder_fns,
-#         phis,
-#     )
 
 
 def get_metric_tensor_and_sqrt_det_g(cfg, step, inverse=False):
@@ -186,6 +142,74 @@ def get_metric_tensor_and_sqrt_det_g_autodecoder(cfg, step, inverse=False):
             jax.jit(sqrt_det_g),
             decoder,
         ), d_params
+
+
+
+
+
+def get_metric_tensor_and_sqrt_det_g_universal_autodecoder(autoencoder_cfg, cfg, charts, inverse=False):
+    
+    model = UniversalAutoencoder(cfg=autoencoder_cfg)
+    decoder = ModulatedSIREN(cfg=autoencoder_cfg)
+    model_apply_fn = model.apply
+
+
+    init_points, supernode_idxs = jnp.zeros((16, 1000, 3)), jax.random.randint(jax.random.PRNGKey(0), (16, 32), 0, 128)
+    params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs)["params"]
+    optimizer = optax.adam(learning_rate=0.1)
+    terget = train_state.TrainState.create(
+        apply_fn=model.apply, params=params, tx=optimizer
+    )
+
+    state = checkpoints.restore_checkpoint(Path(cfg.autoencoder_checkpoint.checkpoint_path).absolute(), step=cfg.autoencoder_checkpoint.step, target=terget)
+    params = state.params
+
+
+    conditionings = []
+    coords = {}
+    key = jax.random.PRNGKey(0)
+    for chart_key in charts.keys():
+        key, subkey = jax.random.split(key)
+        supernode_idxs = jax.random.permutation(subkey, jnp.arange(charts[chart_key].shape[0]))[:cfg.num_supernodes]
+        out, coord, conditioning = model_apply_fn({"params": params}, charts[chart_key][None, :, :], supernode_idxs[None, :])
+        conditionings.append(conditioning)
+        coords[chart_key] = coord[0, :, :]
+    
+    with open(cfg.dataset.charts_path + "/charts2d.pkl", "wb") as f:
+        pickle.dump(coords, f)
+
+    conditionings = jnp.concatenate(conditionings, axis=0)
+    d_params = params["siren"]
+
+
+    def induced_riemannian_metric(conditioning, z):
+        phi = lambda x, conditioning: decoder.apply({"params": d_params}, x, conditioning)
+        J = jax.vmap(jax.jacfwd(phi, argnums=0), (0, None))(z, conditioning)[:, 0, :, :]
+        return J.transpose(0, 2, 1) @ J
+
+    def induced_inverse_riemannian_metric(conditioning, z):
+        phi = lambda x, conditioning: decoder.apply({"params": d_params}, x, conditioning)
+        J = jax.vmap(jax.jacfwd(phi, argnums=0), (0, None))(z, conditioning)[:, 0, :, :]
+        return jnp.linalg.inv(J.transpose(0, 2, 1) @ J)
+
+    def sqrt_det_g(conditioning, z):
+        return jnp.sqrt(jnp.linalg.det(induced_riemannian_metric(conditioning, z)))
+
+    if inverse:
+        return (
+            jax.jit(induced_inverse_riemannian_metric),
+            jax.jit(sqrt_det_g),
+            decoder,
+        ), (conditionings, d_params)
+    else:
+        return (
+            jax.jit(induced_riemannian_metric),
+            jax.jit(sqrt_det_g),
+            decoder,
+        ), (conditionings, d_params)
+
+
+
 
 
 def compute_norm_g_ginv_from_params(params, decoder_fn, noise_scale=0.1):

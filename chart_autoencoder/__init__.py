@@ -24,6 +24,7 @@ from chart_autoencoder.models import AutoEncoder
 from chart_autoencoder.get_charts import (
     get_charts,
     load_charts,
+    load_charts3d,
     save_charts,
     refine_chart,
     reindex_charts,
@@ -37,5 +38,6 @@ from chart_autoencoder.riemann import (
     get_metric_tensor_and_sqrt_det_g,
     get_metric_tensor_and_sqrt_det_g_autodecoder,
     compute_norm_g_ginv_from_params_autoencoder,
+    get_metric_tensor_and_sqrt_det_g_universal_autodecoder,
 )
 from chart_autoencoder.persistence_homology_utils import compute_persistence_homology
