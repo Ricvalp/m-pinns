@@ -323,11 +323,9 @@ def main(_):
     # save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
 
 
-
 # ------------------------------
 # --------- testing ------------
 # ------------------------------
-
 
     # Add test reconstruction after training
     print("Testing reconstruction...")
@@ -338,7 +336,6 @@ def main(_):
         wandb.log({"final_reconstruction_mse": test_mse})
         # Upload the reconstruction image to wandb
         wandb.log({"reconstruction_samples": wandb.Image(f"figures/test_fit_universal_autoencoder/{name}.png")})
-
 
 
 # ------------------------------
@@ -447,7 +444,7 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
     """
     # Get a batch of data
     data_iter = iter(data_loader)
-    points, supernode_idxs = next(data_iter)
+    points, supernode_idxs, chart_id = next(data_iter)
     
     # Generate reconstructions
     reconstructions, coords, conditioning = state.apply_fn({"params": state.params}, points, supernode_idxs)
