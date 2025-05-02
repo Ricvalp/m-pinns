@@ -22,6 +22,7 @@ import pickle
 import json
 from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
 from universal_autoencoder.siren import ModulatedSIREN
+from universal_autoencoder.sphere_dataset import SphereDataset, HalfSphereDataset
 
 
 def load_cfgs():
@@ -38,11 +39,14 @@ def load_cfgs():
 
 
     cfg.dataset = ml_collections.ConfigDict()
+    cfg.dataset.num_charts = 100
     cfg.dataset.num_points = 1000
     cfg.dataset.disk_radius = 1.0
     cfg.dataset.num_supernodes = 32
     cfg.dataset.nearest_neighbors_distance_matrix = 10
-
+    cfg.dataset.load_charts_and_distances = False
+    cfg.dataset.path = "universal_autoencoder/sphere/data"
+    cfg.dataset.save_charts_and_distances = False
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # Training # # # # # # # # # # # # # # # # #
@@ -141,16 +145,26 @@ def main(_):
 
     key = jax.random.PRNGKey(cfg.seed)
     key, params_subkey, supernode_subkey = jax.random.split(key, 3)
-    dataset=HalfSphereDataset(
+    # dataset=HalfSphereDataset(
+    #         num_points=cfg.dataset.num_points, 
+    #         num_supernodes=cfg.dataset.num_supernodes,
+    #         nearest_neighbors_distance_matrix=cfg.dataset.nearest_neighbors_distance_matrix
+    #     )
+    dataset=SphereDataset(
+            num_charts=cfg.dataset.num_charts,
             num_points=cfg.dataset.num_points, 
             num_supernodes=cfg.dataset.num_supernodes,
-            nearest_neighbors_distance_matrix=cfg.dataset.nearest_neighbors_distance_matrix
+            nearest_neighbors_distance_matrix=cfg.dataset.nearest_neighbors_distance_matrix,
+            load_charts_and_distances=cfg.dataset.load_charts_and_distances,
+            save_charts_and_distances=cfg.dataset.save_charts_and_distances,
+            path=cfg.dataset.path
         )
+    
     data_loader = DataLoader(
         dataset=dataset,
         batch_size=cfg.train.batch_size,
         shuffle=True,
-        num_workers=8,
+        num_workers=0,
         collate_fn=numpy_collate,
     )
 
@@ -166,7 +180,7 @@ def main(_):
     else:
         wandb_id = "no_wandb_" + str(cfg.seed)
 
-    Path(cfg.checkpoint.path).mkdir(parents=True, exist_ok=True)
+    (Path(cfg.checkpoint.path) / wandb_id).mkdir(parents=True, exist_ok=True)
     with open(os.path.join(cfg.checkpoint.path, f"{wandb_id}/cfg.json"), "w") as f:
         json.dump(cfg.to_dict(), f, indent=4)
 
@@ -193,12 +207,11 @@ def main(_):
         g_inv = jnp.linalg.inv(g)
         return jnp.mean(jnp.absolute(g)) + 0.1 * jnp.mean(jnp.absolute(g_inv))
 
-    distance_matrix = dataset.distances_matrix
-
+    distance_matrix = jnp.array(dataset.distances_matrix)
 
     def geo_riemann_loss_fn(params, batch, key, lamb=1.0):
 
-        points, supernode_idxs = batch
+        points, supernode_idxs, chart_id = batch
         pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
         recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
 
@@ -207,18 +220,17 @@ def main(_):
             * cfg.train.noise_scale_riemannian
         )
 
-        geodesic_loss = geodesic_preservation_loss(distance_matrix, coords).mean()
+        geodesic_loss = geodesic_preservation_loss(distance_matrix[chart_id], coords).mean()
         riemannian_loss = riemannian_metric_loss(params, conditioning, coords + noise).mean()
 
         return recon_loss + lamb * (geodesic_loss + riemannian_loss), (recon_loss, geodesic_loss, riemannian_loss)
 
 
     def geo_loss_fn(params, batch, key, lamb=1.0):
-        points, supernode_idxs = batch
+        points, supernode_idxs, chart_id = batch
         pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
         recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-
-        geodesic_loss = geodesic_preservation_loss(distance_matrix, coords).mean()
+        geodesic_loss = geodesic_preservation_loss(distance_matrix[chart_id], coords).mean()
         return recon_loss + lamb * geodesic_loss, (recon_loss, geodesic_loss)
 
 
@@ -246,7 +258,7 @@ def main(_):
     )
 
     # Initialize parameters
-    init_points, supernode_idxs = next(iter(data_loader))
+    init_points, supernode_idxs, _ = next(iter(data_loader))
     params = model.init(params_subkey, init_points, supernode_idxs)["params"]
     print(f"Number of parameters: {count_parameters(params)}")
     optimizer = optax.adam(learning_rate=cfg.train.lr)
@@ -261,7 +273,7 @@ def main(_):
 # ------------------------------
 
     progress_bar = tqdm(range(cfg.train.num_steps))
-    step = 0
+    step = 1
     data_loader_iter = iter(data_loader)
 
     for _ in progress_bar:
@@ -335,7 +347,7 @@ def main(_):
 
     progress_bar = tqdm(range(cfg.train.num_finetuning_steps))
     global_step = step
-    step = 0
+    step = 1
     data_loader_iter = iter(data_loader)
 
     lamb = 0.0001
@@ -378,6 +390,7 @@ def main(_):
     
     save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
 
+
 # ------------------------------
 # --- testing post finetuning --
 # ------------------------------
@@ -395,164 +408,10 @@ def main(_):
 # ------ getting charts --------
 # ------------------------------
 
-
-
-
     coords = jnp.concatenate(coords, axis=0)
 
     with open(f"./datasets/{dataset}/charts/charts2d.pkl", "wb") as f:
         pickle.dump(coords, f)
-
-
-def create_graph(
-    pts,
-    nearest_neighbors,
-):
-    """
-
-    Create a graph from the points.
-
-    Args:
-        pts (np.ndarray): The points
-        n (int): The number of nearest neighbors
-        connectivity (np.ndarray): The connectivity of the mesh
-
-    Returns:
-        G (nx.Graph): The graph
-
-    """
-
-    # Create a n-NN graph
-    tree = KDTree(pts)
-    G = nx.Graph()
-
-    # Add nodes to the graph
-    for i, point in enumerate(pts):
-        G.add_node(i, pos=point)
-
-    # Add edges to the graph
-    logging.info("Building the graph...")
-    distances, indices = tree.query(
-        pts, nearest_neighbors + 1
-    )  # n+1 because the point itself is included
-
-    for i in range(len(pts)):
-        for j in range(
-            1, nearest_neighbors + 1
-        ):  # start from 1 to exclude the point itself
-            neighbor_index = indices[i, j]
-            distance = distances[i, j]
-            G.add_edge(i, neighbor_index, weight=distance)
-
-    logging.info(f"Graph created with {len(G.nodes)} nodes and {len(G.edges)} edges")
-
-    return G
-
-
-def calculate_distance_matrix_single_process(pts, nearest_neighbors):
-    logging.info(f"Calculating distances for {len(pts)} points")
-    G = create_graph(pts=pts, nearest_neighbors=nearest_neighbors)
-    # Check that graph is a single connected component
-    if not nx.is_connected(G):
-        raise ValueError(
-            f"The graph is not a single connected component"
-        )
-    # distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
-    distances = dict(nx.all_pairs_dijkstra_path_length(G, cutoff=None))
-    distances_matrix = np.zeros((len(pts), len(pts)))
-    for j in range(len(pts)):
-        for k in range(len(pts)):
-            distances_matrix[j, k] = distances[j][k]
-    logging.info(f"Finished calculating distances")
-    return distances_matrix
-
-
-class HalfSphereDataset(Dataset):
-    def __init__(self, num_points, num_supernodes, nearest_neighbors_distance_matrix):
-        self.num_points = num_points
-        self.num_supernodes = num_supernodes
-        theta = np.random.uniform(0, jnp.pi/2, (num_points, 1))
-        phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
-
-        # Generate points on a sphere
-        self.points = np.concatenate(
-            [np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)],
-            axis=-1,
-        )
-
-        self.distances_matrix = calculate_distance_matrix_single_process(self.points, nearest_neighbors_distance_matrix)
-
-        # Generate random supernode indices
-        self.random_supernode_idxs = []
-        for i in range(10000):
-            self.random_supernode_idxs.append(np.random.permutation(self.num_points)[: self.num_supernodes])
-
-    def get_rotated_points(self):
-
-        # Generate random rotation matrix
-        theta = np.random.uniform(0, 2*np.pi)
-        phi = np.random.uniform(0, 2*np.pi) 
-        psi = np.random.uniform(0, 2*np.pi)
-
-        # Rotation matrix around x axis
-        Rx = np.array([[1, 0, 0],
-                      [0, np.cos(theta), -np.sin(theta)],
-                      [0, np.sin(theta), np.cos(theta)]])
-
-        # Rotation matrix around y axis  
-        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
-                      [0, 1, 0],
-                      [-np.sin(phi), 0, np.cos(phi)]])
-
-        # Rotation matrix around z axis
-        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
-                      [np.sin(psi), np.cos(psi), 0],
-                      [0, 0, 1]])
-
-        # Combined rotation matrix
-        R = Rz @ Ry @ Rx
-
-        # Apply rotation
-        return (R @ self.points.T).T
-
-    def get_rotated_scaled_points(self):
-
-        # Generate random rotation matrix
-        theta = np.random.uniform(0, 2*np.pi)
-        phi = np.random.uniform(0, 2*np.pi) 
-        psi = np.random.uniform(0, 2*np.pi)
-        scale = np.random.uniform(0.5, 1.5)
-
-        # Rotation matrix around x axis
-        Rx = np.array([[1, 0, 0],
-                      [0, np.cos(theta), -np.sin(theta)],
-                      [0, np.sin(theta), np.cos(theta)]])
-
-        # Rotation matrix around y axis  
-        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
-                      [0, 1, 0],
-                      [-np.sin(phi), 0, np.cos(phi)]])
-
-        # Rotation matrix around z axis
-        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
-                      [np.sin(psi), np.cos(psi), 0],
-                      [0, 0, 1]])
-
-        # Combined rotation matrix
-        R = Rz @ Ry @ Rx
-
-        # Apply rotation
-        return (scale * R @ self.points.T).T
-
-
-    def __len__(self):
-        return 100000000 # self.num_points
-
-    def __getitem__(self, idx):
-        supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
-        # points = self.get_rotated_points()
-        points = self.get_rotated_scaled_points()
-        return points, supernode_idxs
 
 
 def numpy_collate(batch):
