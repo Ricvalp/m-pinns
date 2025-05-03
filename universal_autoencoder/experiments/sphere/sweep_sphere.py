@@ -4,24 +4,30 @@ from pathlib import Path
 
 
 sweep_params = {
-    "config.train_dataset.num_signals": [256, 512, 1024, 2048, 4096, 8192],
-    "config.train_dataset.batch_size": [64, 128, 256, 512, 1024, 2048],
-    "config.valid.val_interval": [2000, 4000, 8000, 16000, 32000, 64000],
+    "config.dataset.num_supernodes": [32, 64, 128],
+    "config.train.batch_size": [64, 128],
+    "config.train.lr": [1e-4, 1e-5, 1e-6],
+}
+
+sweep_params_2 = {
+    "config.encoder_supernodes_cfg.coord_enc_dim": [64, 128],
+    "config.modulated_siren_cfg.hidden_dim": [64, 128, 256],
+    "config.modulated_siren_cfg.num_layers": [2, 3, 4],
 }
 
 # Generate all combinations of parameters
 
 # all_combinations = list(zip(*sweep_params.values()))
-all_combinations = list(product(*sweep_params.values()))
+all_combinations = list(product(*sweep_params.values())) + list(product(*sweep_params_2.values()))
 
 print(all_combinations)
 
-dryrun = True  # Set to True to test the script without running jobs
+dryrun = False  # Set to True to test the script without running jobs
 job_name = "sweep_sphere"
 
 # Paths
-script_path = "$HOME/mpinns/universal_autoencoder/experiments/sphere/test_fit_universal_autoencoder_riemann_finetuning.py"
-output_dir = f"/scratch-shared/rvalperga/mpinns/universal_autoencoder/experiments/sphere/sweep_jobs/{job_name}"
+script_path = "$HOME/mpinns/universal_autoencoder/fit_universal_autoencoder_sphere.py"
+output_dir = f"/scratch-shared/rvalperga/mpinns/universal_autoencoder/experiments/sphere/{job_name}"
 template_path = "/home/rvalperga/mpinns/universal_autoencoder/experiments/sphere/template.slurm"
 
 Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -35,7 +41,7 @@ SBU_COSTS = {
     "gpu_a100": 128,
     "gpu_h100": 192,
 }
-partition = "gpu_a100"
+partition = "gpu_h100"
 time_limit = "01:00:00"
 # Calculate the total cost
 if partition not in SBU_COSTS:

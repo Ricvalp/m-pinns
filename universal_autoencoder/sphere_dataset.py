@@ -76,16 +76,19 @@ def compute_distance_matrix(charts, nearest_neighbors):
 def calculate_distance_matrix_single_process(chart_data, nearest_neighbors):
     pts, chart_id = chart_data
     G = create_graph(pts=pts, nearest_neighbors=nearest_neighbors)
-    if not nx.is_connected(G):
-        raise ValueError(
-            f"Graph for chart {chart_id} is not a single connected component"
-        )
-    distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
-    distances_matrix = np.zeros((len(pts), len(pts)))
-    for j in range(len(pts)):
-        for k in range(len(pts)):
-            distances_matrix[j, k] = distances[j][k]
-    return distances_matrix
+    try:
+        if not nx.is_connected(G):
+            raise ValueError(
+                f"Graph for chart {chart_id} is not a single connected component"
+            )
+        distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
+        distances_matrix = np.zeros((len(pts), len(pts)))
+        for j in range(len(pts)):
+            for k in range(len(pts)):
+                distances_matrix[j, k] = distances[j][k]
+        return distances_matrix
+    except ValueError as e:
+        return None
 
 
 class SphereDataset(Dataset):
@@ -102,25 +105,36 @@ class SphereDataset(Dataset):
         self.num_points = num_points
         self.num_supernodes = num_supernodes
         self.nearest_neighbors_distance_matrix = nearest_neighbors_distance_matrix
-        self.charts = []
+        charts = []
 
         if load_charts_and_distances:
             self.charts = np.load(f"{path}/sphere_charts.npy")
             self.distances_matrix = np.load(f"{path}/sphere_distances_matrix.npy")
         else:
             for i in range(num_charts):
-                theta = np.random.uniform(0, jnp.pi*np.random.uniform(0.3, 0.7), (num_points, 1))
+                theta = np.random.uniform(0, jnp.pi*np.random.uniform(0.3, 0.4), (num_points, 1))
                 phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
 
-            # Generate points on a sphere
-            points = np.concatenate(
-                [np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)],
-                axis=-1,
-            )
+                # Generate points on a sphere
+                points = np.concatenate(
+                    [np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)],
+                    axis=-1,
+                )
 
-            self.charts.append(points)
+                charts.append(points)
 
-            self.distances_matrix = compute_distance_matrix(self.charts, self.nearest_neighbors_distance_matrix)
+            distances_matrix = compute_distance_matrix(charts, self.nearest_neighbors_distance_matrix)
+            self.distances_matrix = []
+            self.charts = []
+            invalid_charts = 0
+            for i, dm in enumerate(distances_matrix):
+                if dm is not None:
+                    self.distances_matrix.append(dm)
+                    self.charts.append(charts[i])
+                else:
+                    invalid_charts += 1
+
+            print(f"Invalid charts: {invalid_charts}")
 
             if save_charts_and_distances:
 
@@ -288,72 +302,7 @@ class HalfSphereDataset(Dataset):
 
 
 if __name__ == "__main__":
-    dataset = SphereDataset(num_charts=100, num_points=2000, num_supernodes=64, nearest_neighbors_distance_matrix=8)
+    dataset = SphereDataset(num_charts=500, num_points=1000, num_supernodes=64, nearest_neighbors_distance_matrix=8)
     print(dataset[0])
 
-
-
-
-
-# def create_graph(
-#     pts,
-#     nearest_neighbors,
-# ):
-#     """
-
-#     Create a graph from the points.
-
-#     Args:
-#         pts (np.ndarray): The points
-#         n (int): The number of nearest neighbors
-#         connectivity (np.ndarray): The connectivity of the mesh
-
-#     Returns:
-#         G (nx.Graph): The graph
-
-#     """
-
-#     # Create a n-NN graph
-#     tree = KDTree(pts)
-#     G = nx.Graph()
-
-#     # Add nodes to the graph
-#     for i, point in enumerate(pts):
-#         G.add_node(i, pos=point)
-
-#     # Add edges to the graph
-#     logging.info("Building the graph...")
-#     distances, indices = tree.query(
-#         pts, nearest_neighbors + 1
-#     )  # n+1 because the point itself is included
-
-#     for i in range(len(pts)):
-#         for j in range(
-#             1, nearest_neighbors + 1
-#         ):  # start from 1 to exclude the point itself
-#             neighbor_index = indices[i, j]
-#             distance = distances[i, j]
-#             G.add_edge(i, neighbor_index, weight=distance)
-
-#     logging.info(f"Graph created with {len(G.nodes)} nodes and {len(G.edges)} edges")
-
-#     return G
-
-
-# def calculate_distance_matrix_single_process(pts, nearest_neighbors):
-#     logging.info(f"Calculating distances for {len(pts)} points")
-#     G = create_graph(pts=pts, nearest_neighbors=nearest_neighbors)
-#     # Check that graph is a single connected component
-#     if not nx.is_connected(G):
-#         raise ValueError(
-#             f"The graph is not a single connected component"
-#         )
-#     # distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
-#     distances = dict(nx.all_pairs_dijkstra_path_length(G, cutoff=None))
-#     distances_matrix = np.zeros((len(pts), len(pts)))
-#     for j in range(len(pts)):
-#         for k in range(len(pts)):
-#             distances_matrix[j, k] = distances[j][k]
-#     logging.info(f"Finished calculating distances")
-#     return distances_matrix
 

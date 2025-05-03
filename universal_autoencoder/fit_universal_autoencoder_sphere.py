@@ -13,9 +13,6 @@ import optax
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from sklearn.neighbors import KDTree
-import networkx as nx
 import os
 from flax.training import checkpoints
 import pickle
@@ -30,26 +27,24 @@ def load_cfgs():
     cfg = ml_collections.ConfigDict()
 
     cfg.seed = 0
-    cfg.figure_path = "figures/test_fit_universal_autoencoder"
-
+    cfg.figure_path = "figures/fit_universal_autoencoder_sphere"
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # Dataset # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-
     cfg.dataset = ml_collections.ConfigDict()
-    cfg.dataset.num_charts = 100
+    cfg.dataset.num_charts = 500
     cfg.dataset.num_points = 1000
     cfg.dataset.disk_radius = 1.0
     cfg.dataset.num_supernodes = 32
     cfg.dataset.nearest_neighbors_distance_matrix = 10
     cfg.dataset.load_charts_and_distances = False
-    cfg.dataset.path = "universal_autoencoder/sphere/data"
-    cfg.dataset.save_charts_and_distances = False
+    cfg.dataset.path = "universal_autoencoder/experiments/sphere/data"
+    cfg.dataset.save_charts_and_distances = True
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    # # # # # # # # # # # # Training # # # # # # # # # # # # # # # # #
+    # # # # # # # # # # # # Training  # # # # # # # # # # # # # # # # # 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.train = ml_collections.ConfigDict()
@@ -68,9 +63,9 @@ def load_cfgs():
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.checkpoint = ml_collections.ConfigDict()
-    cfg.checkpoint.path = "universal_autoencoder/checkpoints"
-    cfg.checkpoint.save_every = 40000
-    cfg.checkpoint.finetuning_save_every = 5000
+    cfg.checkpoint.path = "universal_autoencoder/experiments/sphere/checkpoints"
+    cfg.checkpoint.save_every = 80000
+    cfg.checkpoint.finetuning_save_every = 2000
     cfg.checkpoint.keep = 10
     cfg.checkpoint.overwrite = True
 
@@ -80,14 +75,16 @@ def load_cfgs():
 
     cfg.wandb = ml_collections.ConfigDict()
     cfg.wandb.use = True
-    cfg.wandb.wandb_log_every = 10
+    cfg.wandb.wandb_log_every = 100
+    cfg.wandb.project = "universal_autoencoder-sphere"
+    cfg.wandb.entity = "ricvalp"
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # Profiler  # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.profiler = ml_collections.ConfigDict()
-    cfg.profiler.use = True
+    cfg.profiler.use = False
     cfg.profiler.log_dir = "universal_autoencoder/profiler/"
     cfg.profiler.start_step = 20
     cfg.profiler.end_step = 30
@@ -171,8 +168,8 @@ def main(_):
     run = None
     if cfg.wandb.use:
         run = wandb.init(
-            project="test_universal_autoencoder",
-            entity="ricvalp",
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
             name=f"test_universal_autoencoder",
             config=cfg.to_dict(),
         )
@@ -208,6 +205,10 @@ def main(_):
         return jnp.mean(jnp.absolute(g)) + 0.1 * jnp.mean(jnp.absolute(g_inv))
 
     distance_matrix = jnp.array(dataset.distances_matrix)
+
+    exmp_chart, exmp_supernode_idxs, exmp_chart_id = next(iter(data_loader))
+    plot_sphere_dataset(exmp_chart, exmp_supernode_idxs, distance_matrix[exmp_chart_id], name=cfg.figure_path + "/sphere_dataset_with_supernodes.png")
+
 
     def geo_riemann_loss_fn(params, batch, key, lamb=1.0):
 
@@ -267,7 +268,6 @@ def main(_):
     )
 
 
-
 # ------------------------------
 # ------- training loop --------
 # ------------------------------
@@ -322,7 +322,6 @@ def main(_):
     
     # save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
 
-
 # ------------------------------
 # --------- testing ------------
 # ------------------------------
@@ -336,7 +335,6 @@ def main(_):
         wandb.log({"final_reconstruction_mse": test_mse})
         # Upload the reconstruction image to wandb
         wandb.log({"reconstruction_samples": wandb.Image(f"figures/test_fit_universal_autoencoder/{name}.png")})
-
 
 # ------------------------------
 # --------- finetuning --------- 
@@ -387,11 +385,9 @@ def main(_):
     
     save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
 
-
 # ------------------------------
 # --- testing post finetuning --
 # ------------------------------
-
 
     print("Testing reconstruction...")
     name = "reconstruction_samples_post_finetuning"
@@ -405,10 +401,10 @@ def main(_):
 # ------ getting charts --------
 # ------------------------------
 
-    coords = jnp.concatenate(coords, axis=0)
+    # coords = jnp.concatenate(coords, axis=0)
 
-    with open(f"./datasets/{dataset}/charts/charts2d.pkl", "wb") as f:
-        pickle.dump(coords, f)
+    # with open(f"./datasets/{dataset}/charts/charts2d.pkl", "wb") as f:
+    #     pickle.dump(coords, f)
 
 
 def numpy_collate(batch):
@@ -549,6 +545,68 @@ def save_checkpoint(state, path, keep=5, overwrite=False):
     step = int(state.step)
     checkpoints.save_checkpoint(Path(path).absolute(), state, step=step, keep=keep, overwrite=overwrite)
 
+
+def plot_sphere_dataset(chart, supernode_idxs, distance_matrix, name=None):
+    """
+    Plot a batch of charts with the supernodes highlighted in a different color.
+    
+    Args:
+        chart: Batch of 3D points representing charts on a sphere
+        supernode_idxs: Indices of supernodes for each chart
+        distance_matrix: Distance matrix of the charts
+        name: Optional path to save the figure
+    """
+    # Determine grid layout
+    num_samples = min(16, len(chart))
+    rows = int(np.ceil(np.sqrt(num_samples)))
+    cols = int(np.ceil(num_samples / rows))
+    
+    fig = plt.figure(figsize=(12, 3 * num_samples))
+    
+    for i in range(num_samples):
+        ax = fig.add_subplot(rows, cols, i+1, projection='3d')
+        
+        # Create a mask for supernodes
+        is_supernode = np.zeros(len(chart[i]), dtype=bool)
+        is_supernode[supernode_idxs[i]] = True
+
+        distances = distance_matrix[i]
+        
+        # Plot regular points
+        ax.scatter(
+            chart[i][~is_supernode, 0],
+            chart[i][~is_supernode, 1],
+            chart[i][~is_supernode, 2],
+            c=distances[0][~is_supernode],
+            alpha=0.5,
+            s=10,
+            label='Regular Points'
+        )
+        
+        # Plot supernodes with different color
+        ax.scatter(
+            chart[i][is_supernode, 0],
+            chart[i][is_supernode, 1],
+            chart[i][is_supernode, 2],
+            c='red',
+            alpha=1.0,
+            s=30,
+            label='Supernodes'
+        )
+        
+        ax.set_title(f'Chart {i} with Supernodes')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_xlim([-1.1, 1.1])
+        ax.set_ylim([-1.1, 1.1])
+        ax.set_zlim([-1.1, 1.1])
+        ax.legend()
+    
+    plt.tight_layout()
+    if name is not None:
+        plt.savefig(name, dpi=300)
+    plt.close()
 
 if __name__ == "__main__":
     app.run(main)

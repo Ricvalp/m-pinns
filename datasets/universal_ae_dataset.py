@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Tuple, Union
 from datasets.utils import Mesh
 from pathlib import Path
 import numpy as np
+import os
 
 import ml_collections
 
@@ -22,7 +23,7 @@ class UniversalAEDataset(data.Dataset):
         
         self.config = config.dataset
         if self.config.create_dataset:
-            m = Mesh(self.config.path)
+            m = Mesh(self.config.mesh_path)
             self.verts, self.connectivity = m.verts, m.connectivity
 
             points = sample_points_from_mesh(m, self.config.points_per_unit_area)
@@ -46,7 +47,8 @@ class UniversalAEDataset(data.Dataset):
 
         self.charts = []
         self.distance_matrix = []
-        for i in range(self.config.num_charts):
+        failed_charts = 0
+        for i in range(self.config.iterations):
             charts, charts_idxs, _ = fast_region_growing(
                 pts=self.points,
                 min_dist=self.config.min_dist,
@@ -54,34 +56,61 @@ class UniversalAEDataset(data.Dataset):
             )
 
             normalized_charts = self._normalize_charts(charts)
-            self.charts = self.charts + normalized_charts
+            distance_matrix = compute_distance_matrix(normalized_charts, self.config.nearest_neighbors)
+            for dm, chart in zip(distance_matrix, normalized_charts):
+                if dm is not None:
+                    self.distance_matrix = self.distance_matrix + [dm]
+                    self.charts = self.charts + [chart]
+                else:
+                    failed_charts += 1
+            
+            print(f"Failed charts: {failed_charts}/{len(distance_matrix)}")
 
-            distance_matrix = compute_distance_matrix(normalized_charts, self.nearest_neighbors_distance_matrix)
-            self.distance_matrix = self.distance_matrix + distance_matrix
-        
-        Path(self.config.path).mkdir(parents=True, exist_ok=True)
-        np.save(self.config.path + "/charts.npy", self.charts)
-        np.save(self.config.path + "/distance_matrix.npy", self.distance_matrix)
+            if i%self.config.save_charts_every==0:
+                Path(self.config.charts_path).mkdir(parents=True, exist_ok=True)
+                np.save(self.config.charts_path + f"/charts_{i}.npy", self.charts)
+                np.save(self.config.charts_path + f"/distance_matrix_{i}.npy", self.distance_matrix)
 
 
     def load_charts_dataset(self):
 
-        self.charts = np.load(self.config.path)
-        self.distance_matrix = np.load(self.config.path)
+        self.charts = []
+        self.distance_matrix = []
+        # List all chart files in the directory
+        chart_files = sorted([f for f in os.listdir(self.config.charts_path) if f.startswith("charts_") and f.endswith(".npy")])
+        distance_matrix_files = sorted([f for f in os.listdir(self.config.charts_path) if f.startswith("distance_matrix_") and f.endswith(".npy")])
+        
+        assert len(chart_files) > 0, f"No chart files found in {self.config.charts_path}"
+        assert len(distance_matrix_files) > 0, f"No distance matrix files found in {self.config.charts_path}"
+        assert len(chart_files) == len(distance_matrix_files), f"Unequal number of chart files ({len(chart_files)}) and distance matrix files ({len(distance_matrix_files)})"
+        
+        for i in range(len(chart_files)):
+            self.charts.append(np.load(self.config.charts_path + f"/charts_{i}.npy"))
+            self.distance_matrix.append(np.load(self.config.charts_path + f"/distance_matrix_{i}.npy"))
+
+        self.charts = np.concatenate(self.charts, axis=0)
+        self.distance_matrix = np.concatenate(self.distance_matrix, axis=0)
 
     
     def _normalize_charts(self, charts):
 
         normalized_charts = []
-        for chart in charts:
-            mu = chart.mean()
-            std = chart.std()
+        for chart_key, chart in charts.items():
+            mu = chart.mean(axis=0)
+            std = chart.std(axis=0)
 
             random_idxs = np.random.choice(len(chart), self.config.num_points, replace=True)
-            normalized_chart = (charts-mu)/std
+            normalized_chart = (chart-mu)/std
             normalized_charts.append(normalized_chart[random_idxs])
 
         return normalized_charts
+
+    def __len__(self):
+        return 100000 # len(self.charts)
+
+    def __getitem__(self, idx):
+        i = np.random.randint(0, len(self.charts))
+        return self.charts[i], self.distance_matrix[i]
 
 
 def create_graph(
@@ -149,10 +178,15 @@ def compute_distance_matrix(charts, nearest_neighbors):
 def calculate_distance_matrix_single_process(chart_data, nearest_neighbors):
     pts, chart_id = chart_data
     G = create_graph(pts=pts, nearest_neighbors=nearest_neighbors)
-    if not nx.is_connected(G):
-        raise ValueError(
-            f"Graph for chart {chart_id} is not a single connected component"
-        )
+    try:
+        if not nx.is_connected(G):
+            raise ValueError(
+                f"Graph for chart {chart_id} is not a single connected component"
+            )
+    except Exception as e:
+        print(f"Error creating graph for chart {chart_id}: {e}")
+        return None
+    
     distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
     distances_matrix = np.zeros((len(pts), len(pts)))
     for j in range(len(pts)):
@@ -216,19 +250,30 @@ def load_config():
     config = ml_collections.ConfigDict()
     
     config.dataset = dataset = ml_collections.ConfigDict()
+    dataset.seed = 37
     dataset.create_dataset = True
-    dataset.path = "./datasets/coil/coil_1.2_MM.obj"
+    dataset.mesh_path = "./datasets/coil/coil_1.2_MM.obj"
+    dataset.charts_path = "/home/rvalperga/mpinns/datasets/coil/uae_charts"
     dataset.points_per_unit_area = 3
     dataset.subset_cardinality = 100000
     dataset.num_points = 1000
-    dataset.num_charts = 200
-    dataset.min_dist = 1.
-    dataset.nearest_neighbors = 8
+    dataset.iterations = 100
+    dataset.min_dist = 10.
+    dataset.nearest_neighbors = 10
+    dataset.save_charts_every = 10
+
+    return config
 
 
 if __name__=="__main__":
 
+    from torch.utils.data import DataLoader
+    from tqdm import tqdm
+
     config = load_config()
     dataset = UniversalAEDataset(config=config)
-    
-    print(dataset[0].shape)
+
+    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
+
+    for batch in tqdm(data_loader):
+        assert True

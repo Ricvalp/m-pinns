@@ -28,7 +28,8 @@
 *ics_idxs*
 *res_batches*
 
-
+*charts.npy
+*distance_matrix.npy
 chart-autoencoder-old-code
 
 # Byte-compiled / optimized / DLL files
