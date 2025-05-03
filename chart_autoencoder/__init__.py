@@ -31,6 +31,7 @@ from chart_autoencoder.get_charts import (
     find_intersection_indices,
     find_verts_in_charts,
     find_closest_points_to_mesh,
+    fast_region_growing,
 )
 from chart_autoencoder.umap_embedding import get_umap_embeddings
 from chart_autoencoder.riemann import (
