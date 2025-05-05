@@ -17,7 +17,10 @@ from flax.training import checkpoints
 import json
 from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
 from universal_autoencoder.siren import ModulatedSIREN
-from universal_autoencoder.sphere_dataset import SphereDataset
+from universal_autoencoder.sphere_dataset import SphereDatasetFast
+
+# Turn off JAX JIT compilation for debugging
+# jax.config.update('jax_disable_jit', True)
 
 
 def load_cfgs():
@@ -32,14 +35,14 @@ def load_cfgs():
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.dataset = ml_collections.ConfigDict()
-    cfg.dataset.num_charts = 500
+    cfg.dataset.num_charts = 50
     cfg.dataset.num_points = 1000
     cfg.dataset.disk_radius = 1.0
     cfg.dataset.num_supernodes = 32
     cfg.dataset.nearest_neighbors_distance_matrix = 10
     cfg.dataset.load_charts_and_distances = True
     cfg.dataset.path = "universal_autoencoder/experiments/sphere/data"
-    cfg.dataset.save_charts_and_distances = True
+    cfg.dataset.save_charts_and_distances = False
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # Training  # # # # # # # # # # # # # # # # # 
@@ -48,10 +51,10 @@ def load_cfgs():
     cfg.train = ml_collections.ConfigDict()
     cfg.train.batch_size = 64
     cfg.train.lr = 1e-4
-    cfg.train.num_steps = 40000
+    cfg.train.num_steps = 80000
     cfg.train.reg = "geodesic_preservation" # "geo+riemannian" # 
     cfg.train.noise_scale_riemannian = 0.01
-    cfg.train.num_finetuning_steps = 20000
+    cfg.train.num_finetuning_steps = 40000
     cfg.train.warmup_lamb_steps = 20000
     cfg.train.max_lamb = 0.0001
     cfg.train.lamb_decay_rate = 0.99995
@@ -62,8 +65,8 @@ def load_cfgs():
 
     cfg.checkpoint = ml_collections.ConfigDict()
     cfg.checkpoint.path = "universal_autoencoder/experiments/sphere/checkpoints"
-    cfg.checkpoint.save_every = 10000
-    cfg.checkpoint.finetuning_save_every = 5000
+    cfg.checkpoint.save_every = 80000
+    cfg.checkpoint.finetuning_save_every = 2000
     cfg.checkpoint.keep = 10
     cfg.checkpoint.overwrite = True
 
@@ -76,7 +79,7 @@ def load_cfgs():
     cfg.wandb.wandb_log_every = 100
     cfg.wandb.project = "universal_autoencoder-sphere"
     cfg.wandb.entity = "ricvalp"
-    cfg.wandb.log_riemann_every = 10000
+    cfg.wandb.log_riemann_every = 50000
     cfg.wandb.run_name_prefix = "sphere"
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -143,7 +146,7 @@ def main(_):
     key = jax.random.PRNGKey(cfg.seed)
     key, params_subkey, supernode_subkey = jax.random.split(key, 3)
 
-    dataset=SphereDataset(
+    dataset=SphereDatasetFast(
             num_charts=cfg.dataset.num_charts,
             num_points=cfg.dataset.num_points, 
             num_supernodes=cfg.dataset.num_supernodes,
@@ -205,7 +208,11 @@ def main(_):
     distance_matrix = jnp.array(dataset.distances_matrix)
 
     exmp_chart, exmp_supernode_idxs, exmp_chart_id = next(iter(data_loader))
-    plot_sphere_dataset(exmp_chart, exmp_supernode_idxs, distance_matrix[exmp_chart_id], name=cfg.figure_path + "/sphere_dataset_with_supernodes.png")
+    plot_sphere_dataset(exmp_chart, exmp_supernode_idxs, distance_matrix[exmp_chart_id], name=cfg.figure_path + "/sphere_dataset_with_supernodes_fast.png")
+
+    keys = jax.random.split(key, exmp_chart.shape[0])
+    transformed_chart = rotate_scale_normalize_batch(exmp_chart, keys)
+    plot_sphere_dataset(transformed_chart, exmp_supernode_idxs, distance_matrix[exmp_chart_id], name=cfg.figure_path + "/sphere_dataset_with_supernodes_transformed_fast.png")
 
     def geo_riemann_loss_fn(params, batch, key, lamb=1.0):
 
@@ -226,6 +233,7 @@ def main(_):
 
     def geo_loss_fn(params, batch, key, lamb=1.0):
         points, supernode_idxs, chart_id = batch
+        points = rotate_scale_normalize_batch(points, key)
         pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
         recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
         geodesic_loss = geodesic_preservation_loss(distance_matrix[chart_id], coords).mean()
@@ -283,16 +291,18 @@ def main(_):
 
         try:
             batch = next(data_loader_iter)
-            key, subkey = jax.random.split(key)
-            state, loss, aux, grads = train_step(state, batch, subkey)
+            key, *subkeys = jax.random.split(key, batch[0].shape[0] + 1)
+            subkeys = jnp.array(subkeys)
+            state, loss, aux, grads = train_step(state, batch, subkeys)
 
             if step % cfg.wandb.wandb_log_every == 0:
 
                 if step % cfg.wandb.log_riemann_every == 0:
+                    key, subkey = jax.random.split(key, 2)
                     loss_riemann, aux_riemann = geodesic_riemann_loss_fn(state.params, batch, subkey, lamb=0.0)
                     wandb.log({"riemannian_loss": aux_riemann[2]}, step=step)
                     name = cfg.figure_path + f"/reconstruction_samples_riemannian_loss_{step}.png"
-                    test_reconstruction(state, data_loader, decoder_apply_fn, name=name)
+                    test_reconstruction(state, data_loader, decoder_apply_fn, key=key, name=name)
                     wandb.log({"reconstruction_samples": wandb.Image(name)}, step=step)
 
                 if cfg.train.reg == "geo+riemannian":
@@ -413,6 +423,49 @@ def main(_):
     #     pickle.dump(coords, f)
 
 
+# ------------------------------------------------------------
+# -------------------------- utils ---------------------------
+# ------------------------------------------------------------
+
+@partial(jax.vmap, in_axes=(0, 0))
+def rotate_scale_normalize_batch(points, key):
+
+    # Generate random rotation matrix
+    key_theta, key_phi, key_psi, key_scale = jax.random.split(key, 4)
+    theta = jax.random.uniform(key_theta, shape=(), minval=0.0, maxval=2 * jnp.pi)
+    phi = jax.random.uniform(key_phi, shape=(), minval=0.0, maxval=2 * jnp.pi)
+    psi = jax.random.uniform(key_psi, shape=(), minval=0.0, maxval=2 * jnp.pi)
+    scale = jax.random.uniform(key_scale, shape=(), minval=0.5, maxval=1.5)
+
+    # Rotation matrix around x axis
+    Rx = jnp.array([[1, 0, 0],
+                    [0, jnp.cos(theta), -jnp.sin(theta)],
+                    [0, jnp.sin(theta), jnp.cos(theta)]])
+
+    # Rotation matrix around y axis  
+    Ry = jnp.array([[jnp.cos(phi), 0, jnp.sin(phi)],
+                    [0, 1, 0],
+                    [-jnp.sin(phi), 0, jnp.cos(phi)]])
+
+    # Rotation matrix around z axis
+    Rz = jnp.array([[jnp.cos(psi), -jnp.sin(psi), 0],
+                    [jnp.sin(psi), jnp.cos(psi), 0],
+                    [0, 0, 1]])
+
+    # Combined rotation matrix
+    R = Rz @ Ry @ Rx
+
+    # Apply rotation
+    points = (scale * R @ points.T).T
+
+    # Normalize
+    mu = points.mean(axis=0)
+    sigma = points.std(axis=0)
+    points = (points - mu) / sigma
+
+    return points
+
+
 def numpy_collate(batch):
     if isinstance(batch[0], np.ndarray):
         return np.stack(batch)
@@ -436,7 +489,7 @@ def count_parameters(params):
     return sum(x.size for x in jax.tree_util.tree_leaves(params))
 
 
-def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, name="reconstruction_samples"):
+def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, key=jax.random.PRNGKey(37), name="reconstruction_samples"):
     """Test the reconstruction ability of the model and visualize results in 3D.
     
     Args:
@@ -447,6 +500,9 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
     # Get a batch of data
     data_iter = iter(data_loader)
     points, supernode_idxs, chart_id = next(data_iter)
+    key, *subkeys = jax.random.split(key, points.shape[0] + 1)
+    subkeys = jnp.array(subkeys)
+    points = rotate_scale_normalize_batch(points, subkeys)
     
     # Generate reconstructions
     reconstructions, coords, conditioning = state.apply_fn({"params": state.params}, points, supernode_idxs)
@@ -472,6 +528,35 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
     det_g_np = np.array(det_g)
     det_g_inv_np = np.array(det_g_inv)
     
+    # Pre-compute global min/max for consistent plotting across all samples
+    x_min_global = np.min([points_np[:, :, 0].min(), reconstructions_np[:, :, 0].min()])
+    x_max_global = np.max([points_np[:, :, 0].max(), reconstructions_np[:, :, 0].max()])
+    y_min_global = np.min([points_np[:, :, 1].min(), reconstructions_np[:, :, 1].min()])
+    y_max_global = np.max([points_np[:, :, 1].max(), reconstructions_np[:, :, 1].max()])
+    z_min_global = np.min([points_np[:, :, 2].min(), reconstructions_np[:, :, 2].min()])
+    z_max_global = np.max([points_np[:, :, 2].max(), reconstructions_np[:, :, 2].max()])
+    
+    # Add 10% padding to the global ranges
+    x_pad_global = 0.1 * (x_max_global - x_min_global)
+    y_pad_global = 0.1 * (y_max_global - y_min_global)
+    z_pad_global = 0.1 * (z_max_global - z_min_global)
+    
+    x_limits = [x_min_global - x_pad_global, x_max_global + x_pad_global]
+    y_limits = [y_min_global - y_pad_global, y_max_global + y_pad_global]
+    z_limits = [z_min_global - z_pad_global, z_max_global + z_pad_global]
+    
+    # Find global min/max for coordinate plots
+    coords_x_min_global = coords_np[:, :, 0].min()
+    coords_x_max_global = coords_np[:, :, 0].max()
+    coords_y_min_global = coords_np[:, :, 1].min()
+    coords_y_max_global = coords_np[:, :, 1].max()
+    
+    # Global min/max for colorbars
+    det_g_inv_min_global = det_g_inv_np.min()
+    det_g_inv_max_global = det_g_inv_np.max()
+    det_g_min_global = det_g_np.min()
+    det_g_max_global = det_g_np.max()
+    
     # Visualize the first num_samples examples
     fig = plt.figure(figsize=(15, 3 * num_samples))
     
@@ -484,24 +569,16 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             points_np[i, :, 2], 
             c='blue', alpha=0.6, s=10
         )
-        ax1.set_title(f'Original Points (Sample {i+1})')
+        if i == 0:
+            ax1.set_title('Original Points')
         ax1.set_xlabel('X')
         ax1.set_ylabel('Y')
         ax1.set_zlabel('Z')
         
-        # Set limits based on min/max values of original points with a small padding
-        x_min, x_max = points_np[i, :, 0].min(), points_np[i, :, 0].max()
-        y_min, y_max = points_np[i, :, 1].min(), points_np[i, :, 1].max()
-        z_min, z_max = points_np[i, :, 2].min(), points_np[i, :, 2].max()
-        
-        # Add 10% padding
-        x_pad = 0.1 * (x_max - x_min)
-        y_pad = 0.1 * (y_max - y_min)
-        z_pad = 0.1 * (z_max - z_min)
-        
-        ax1.set_xlim([x_min - x_pad, x_max + x_pad])
-        ax1.set_ylim([y_min - y_pad, y_max + y_pad])
-        ax1.set_zlim([z_min - z_pad, z_max + z_pad])
+        # Use global limits for consistent scaling
+        ax1.set_xlim(x_limits)
+        ax1.set_ylim(y_limits)
+        ax1.set_zlim(z_limits)
         
         # Reconstructed points
         ax2 = fig.add_subplot(num_samples, 4, 4*i+2, projection='3d')
@@ -511,38 +588,16 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             reconstructions_np[i, :, 2], 
             c='red', alpha=0.6, s=10
         )
-        ax2.set_title(f'Reconstructed Points (Sample {i+1})')
+        if i == 0:
+            ax2.set_title('Reconstructed Points')
         ax2.set_xlabel('X')
         ax2.set_ylabel('Y')
         ax2.set_zlabel('Z')
         
-        # Set limits based on min/max values across both original and reconstructed points
-        # This ensures consistent scaling between the two plots
-        recon_x_min, recon_x_max = reconstructions_np[i, :, 0].min(), reconstructions_np[i, :, 0].max()
-        recon_y_min, recon_y_max = reconstructions_np[i, :, 1].min(), reconstructions_np[i, :, 1].max()
-        recon_z_min, recon_z_max = reconstructions_np[i, :, 2].min(), reconstructions_np[i, :, 2].max()
-        
-        # Get the min/max across both sets of points
-        x_min = min(x_min, recon_x_min)
-        x_max = max(x_max, recon_x_max)
-        y_min = min(y_min, recon_y_min)
-        y_max = max(y_max, recon_y_max)
-        z_min = min(z_min, recon_z_min)
-        z_max = max(z_max, recon_z_max)
-        
-        # Add 10% padding
-        x_pad = 0.1 * (x_max - x_min)
-        y_pad = 0.1 * (y_max - y_min)
-        z_pad = 0.1 * (z_max - z_min)
-        
-        # Set the same limits for both plots for consistent comparison
-        ax1.set_xlim([x_min - x_pad, x_max + x_pad])
-        ax1.set_ylim([y_min - y_pad, y_max + y_pad])
-        ax1.set_zlim([z_min - z_pad, z_max + z_pad])
-        
-        ax2.set_xlim([x_min - x_pad, x_max + x_pad])
-        ax2.set_ylim([y_min - y_pad, y_max + y_pad])
-        ax2.set_zlim([z_min - z_pad, z_max + z_pad])
+        # Use the same global limits
+        ax2.set_xlim(x_limits)
+        ax2.set_ylim(y_limits)
+        ax2.set_zlim(z_limits)
 
         # Learned coordinates
         ax3 = fig.add_subplot(num_samples, 4, 4*i+3)
@@ -552,14 +607,15 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             c=det_g_inv_np[i],
             alpha=0.8,
             s=10,
-            vmin=det_g_inv_np.min(),
-            vmax=det_g_inv_np.max()
+            vmin=det_g_inv_min_global,
+            vmax=det_g_inv_max_global
         )
-        ax3.set_title(f'Learned 2D Coordinates (Sample {i+1})')
+        if i == 0:
+            ax3.set_title('g^{-1}')
         ax3.set_xlabel('X')
         ax3.set_ylabel('Y')
-        ax3.set_xlim([coords_np[i, :, 0].min(), coords_np[i, :, 0].max()])
-        ax3.set_ylim([coords_np[i, :, 1].min(), coords_np[i, :, 1].max()])
+        ax3.set_xlim([coords_x_min_global, coords_x_max_global])
+        ax3.set_ylim([coords_y_min_global, coords_y_max_global])
         ax3.set_aspect('equal')
         plt.colorbar(scatter, ax=ax3, label='det(g^{-1})')
 
@@ -570,14 +626,15 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             c=det_g_np[i],
             alpha=0.8,
             s=10,
-            vmin=det_g_np.min(),
-            vmax=det_g_np.max()
+            vmin=det_g_min_global,
+            vmax=det_g_max_global
         )
-        ax4.set_title(f'det(g) (Sample {i+1})')
+        if i == 0:
+            ax4.set_title('g')
         ax4.set_xlabel('X')
         ax4.set_ylabel('Y')
-        ax4.set_xlim([coords_np[i, :, 0].min(), coords_np[i, :, 0].max()])
-        ax4.set_ylim([coords_np[i, :, 1].min(), coords_np[i, :, 1].max()])
+        ax4.set_xlim([coords_x_min_global, coords_x_max_global])
+        ax4.set_ylim([coords_y_min_global, coords_y_max_global])
         ax4.set_aspect('equal')
         plt.colorbar(scatter, ax=ax4, label='det(g)')
     

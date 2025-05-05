@@ -2,7 +2,6 @@ import numpy as np
 import jax.numpy as jnp
 import multiprocessing as mp
 import logging
-from tqdm import tqdm
 from pathlib import Path
 from functools import partial
 from torch.utils.data import Dataset
@@ -112,7 +111,9 @@ class SphereDataset(Dataset):
             self.distances_matrix = np.load(f"{path}/sphere_distances_matrix.npy")
         else:
             for i in range(num_charts):
-                theta = np.random.uniform(0, jnp.pi/np.random.uniform(1.8, 2.5), (num_points, 1))
+                # theta = np.random.uniform(0, jnp.pi/np.random.uniform(1.8, 2.5), (num_points, 1))
+                z = np.random.uniform(-0.17364, 1, (num_points, 1))  # z = cos(theta)
+                theta = np.arccos(z)
                 phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
 
                 # Generate points on a sphere
@@ -271,9 +272,9 @@ class SphereDataset(Dataset):
         
         # Re-normalize to ensure points stay on a sphere-like surface
         # This helps maintain the invertibility of the transformation
-        if np.random.random() < 0.5:  # Randomly decide whether to re-normalize
-            new_radius = np.linalg.norm(deformed_points, axis=1, keepdims=True)
-            deformed_points = deformed_points * (radius / new_radius)
+        # if np.random.random() < 0.5:  # Randomly decide whether to re-normalize
+        #     new_radius = np.linalg.norm(deformed_points, axis=1, keepdims=True)
+        #     deformed_points = deformed_points * (radius / new_radius)
         
         return deformed_points
 
@@ -283,7 +284,8 @@ class SphereDataset(Dataset):
     def __getitem__(self, idx):
         supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
         chart_id = np.random.randint(0, len(self.charts))
-        points = self.get_rotated_scaled_points(chart_id)
+        # points = self.get_rotated_scaled_points(chart_id)
+        points = self.get_rotated_scaled_deformed_points(chart_id, deformation_magnitude=1.0)
         mu = points.mean(axis=0)
         sigma = points.std(axis=0)
         points = (points - mu) / sigma
@@ -374,6 +376,70 @@ class HalfSphereDataset(Dataset):
         # points = self.get_rotated_points()
         points = self.get_rotated_scaled_points()
         return points, supernode_idxs
+
+
+class SphereDatasetFast(Dataset):
+    def __init__(self,
+                 num_charts,
+                 num_points,
+                 num_supernodes,
+                 nearest_neighbors_distance_matrix,
+                 load_charts_and_distances=True,
+                 save_charts_and_distances=True,
+                 path="universal_autoencoder/sphere/data"):
+
+        self.num_charts = num_charts
+        self.num_points = num_points
+        self.num_supernodes = num_supernodes
+        self.nearest_neighbors_distance_matrix = nearest_neighbors_distance_matrix
+        charts = []
+
+        if load_charts_and_distances:
+            self.charts = np.load(f"{path}/sphere_charts.npy")
+            self.distances_matrix = np.load(f"{path}/sphere_distances_matrix.npy")
+        else:
+            for i in range(num_charts):
+                theta = np.random.uniform(0, jnp.pi/np.random.uniform(1.8, 2.5), (num_points, 1))
+                phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
+
+                # Generate points on a sphere
+                points = np.concatenate(
+                    [np.sin(theta) * np.cos(phi), np.sin(theta) * np.sin(phi), np.cos(theta)],
+                    axis=-1,
+                )
+
+                charts.append(points)
+
+            distances_matrix = compute_distance_matrix(charts, self.nearest_neighbors_distance_matrix)
+            self.distances_matrix = []
+            self.charts = []
+            invalid_charts = 0
+            for i, dm in enumerate(distances_matrix):
+                if dm is not None:
+                    self.distances_matrix.append(dm)
+                    self.charts.append(charts[i])
+                else:
+                    invalid_charts += 1
+
+            print(f"Invalid charts: {invalid_charts}")
+
+            if save_charts_and_distances:
+
+                Path(path).mkdir(parents=True, exist_ok=True)
+                np.save(f"{path}/sphere_charts.npy", self.charts)
+                np.save(f"{path}/sphere_distances_matrix.npy", self.distances_matrix)
+
+        self.random_supernode_idxs = []
+        for i in range(10000):
+            self.random_supernode_idxs.append(np.random.permutation(self.num_points)[: self.num_supernodes])
+
+    def __len__(self):
+        return 100000000 # self.num_points
+
+    def __getitem__(self, idx):
+        supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
+        chart_id = np.random.randint(0, len(self.charts))
+        return self.charts[chart_id], supernode_idxs, chart_id
 
 
 if __name__ == "__main__":
