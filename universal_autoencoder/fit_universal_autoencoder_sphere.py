@@ -48,7 +48,7 @@ def load_cfgs():
     cfg.train = ml_collections.ConfigDict()
     cfg.train.batch_size = 64
     cfg.train.lr = 1e-4
-    cfg.train.num_steps = 200000
+    cfg.train.num_steps = 300000
     cfg.train.reg = "geodesic_preservation" # "geo+riemannian" # 
     cfg.train.noise_scale_riemannian = 0.01
     cfg.train.num_finetuning_steps = 20000

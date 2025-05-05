@@ -49,7 +49,7 @@ SBU_COSTS = {
     "gpu_h100": 192,
 }
 partition = "gpu_h100"
-time_limit = "01:00:00"
+time_limit = "03:00:00"
 # Calculate the total cost
 if partition not in SBU_COSTS:
     raise ValueError(f"Unknown partition: {partition}. Available partitions are: {list(SBU_COSTS.keys())}")
