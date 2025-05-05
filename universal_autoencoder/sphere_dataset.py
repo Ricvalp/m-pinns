@@ -81,7 +81,7 @@ def calculate_distance_matrix_single_process(chart_data, nearest_neighbors):
             raise ValueError(
                 f"Graph for chart {chart_id} is not a single connected component"
             )
-        distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
+        distances = dict(nx.all_pairs_dijkstra_path_length(G, cutoff=None))
         distances_matrix = np.zeros((len(pts), len(pts)))
         for j in range(len(pts)):
             for k in range(len(pts)):
@@ -112,7 +112,7 @@ class SphereDataset(Dataset):
             self.distances_matrix = np.load(f"{path}/sphere_distances_matrix.npy")
         else:
             for i in range(num_charts):
-                theta = np.random.uniform(0, jnp.pi*np.random.uniform(0.3, 0.4), (num_points, 1))
+                theta = np.random.uniform(0, jnp.pi/np.random.uniform(1.8, 2.5), (num_points, 1))
                 phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
 
                 # Generate points on a sphere
@@ -203,22 +203,98 @@ class SphereDataset(Dataset):
         # Apply rotation
         return (scale * R @ self.charts[chart_id].T).T
 
+    def get_rotated_scaled_deformed_points(self, chart_id, deformation_magnitude=0.0):
+        """
+        Apply rotation, scaling, and a smooth deformation to the chart points.
+        
+        Args:
+            chart_id: index of the chart to transform
+            deformation_magnitude: controls the strength of deformation (0.0 = no deformation)
+        
+        Returns:
+            Transformed points
+        """
+        # Generate random rotation matrix
+        theta = np.random.uniform(0, 2*np.pi)
+        phi = np.random.uniform(0, 2*np.pi) 
+        psi = np.random.uniform(0, 2*np.pi)
+        scale = np.random.uniform(0.5, 1.5)
+
+        # Rotation matrix around x axis
+        Rx = np.array([[1, 0, 0],
+                      [0, np.cos(theta), -np.sin(theta)],
+                      [0, np.sin(theta), np.cos(theta)]])
+
+        # Rotation matrix around y axis  
+        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
+                      [0, 1, 0],
+                      [-np.sin(phi), 0, np.cos(phi)]])
+
+        # Rotation matrix around z axis
+        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
+                      [np.sin(psi), np.cos(psi), 0],
+                      [0, 0, 1]])
+
+        # Combined rotation matrix
+        R = Rz @ Ry @ Rx
+
+        # Apply rotation and scaling
+        points = (scale * R @ self.charts[chart_id].T).T
+        
+        # Skip deformation if magnitude is 0
+        if deformation_magnitude == 0.0:
+            return points
+        
+        # Apply a smooth, invertible deformation (diffeomorphism)
+        # Using a sinusoidal perturbation as it's smooth and can be made small enough to remain invertible
+        freqs = np.random.uniform(1.0, 3.0, size=3)  # Different frequencies for each dimension
+        phases = np.random.uniform(0.0, 2*np.pi, size=3)  # Random phase shifts
+        
+        # Calculate normalized radius from origin for smooth falloff near poles
+        radius = np.linalg.norm(points, axis=1, keepdims=True)
+        normalized_points = points / radius  # Direction vectors
+        
+        # Create deformation vector field based on sinusoidal pattern
+        deformation = np.zeros_like(points)
+        for i in range(3):
+            deformation[:, i] = np.sin(freqs[i] * points[:, (i+1)%3] + phases[i]) * \
+                               np.cos(freqs[i] * points[:, (i+2)%3] + phases[i])
+        
+        # Ensure deformation preserves the spherical structure by projecting it tangent to the sphere
+        deformation -= np.sum(deformation * normalized_points, axis=1, keepdims=True) * normalized_points
+        
+        # Scale the deformation by the provided magnitude
+        deformation *= deformation_magnitude
+        
+        # Apply the deformation
+        deformed_points = points + deformation
+        
+        # Re-normalize to ensure points stay on a sphere-like surface
+        # This helps maintain the invertibility of the transformation
+        if np.random.random() < 0.5:  # Randomly decide whether to re-normalize
+            new_radius = np.linalg.norm(deformed_points, axis=1, keepdims=True)
+            deformed_points = deformed_points * (radius / new_radius)
+        
+        return deformed_points
+
     def __len__(self):
         return 100000000 # self.num_points
 
     def __getitem__(self, idx):
         supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
         chart_id = np.random.randint(0, len(self.charts))
-        # distance_matrix = self.distances_matrix[chart_id]
         points = self.get_rotated_scaled_points(chart_id)
-        return points, supernode_idxs, chart_id  # distance_matrix
+        mu = points.mean(axis=0)
+        sigma = points.std(axis=0)
+        points = (points - mu) / sigma
+        return points, supernode_idxs, chart_id
 
 
 class HalfSphereDataset(Dataset):
     def __init__(self, num_points, num_supernodes, nearest_neighbors_distance_matrix):
         self.num_points = num_points
         self.num_supernodes = num_supernodes
-        theta = np.random.uniform(0, jnp.pi/1.8, (num_points, 1))
+        theta = np.random.uniform(0, jnp.pi/2.6, (num_points, 1))
         phi = np.random.uniform(0, 2 * jnp.pi, (num_points, 1))
 
         # Generate points on a sphere
@@ -227,7 +303,7 @@ class HalfSphereDataset(Dataset):
             axis=-1,
         )
 
-        self.distances_matrix = calculate_distance_matrix_single_process(self.points, nearest_neighbors_distance_matrix)
+        self.distances_matrix = calculate_distance_matrix_single_process((self.points, 0), nearest_neighbors_distance_matrix)
 
         self.random_supernode_idxs = []
         for i in range(10000):
@@ -289,7 +365,6 @@ class HalfSphereDataset(Dataset):
 
         # Apply rotation
         return (scale * R @ self.points.T).T
-
 
     def __len__(self):
         return 100000000 # self.num_points
