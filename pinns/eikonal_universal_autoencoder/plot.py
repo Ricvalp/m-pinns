@@ -5,6 +5,7 @@ import numpy as np
 import open3d as o3d
 import seaborn as sns
 import pandas as pd
+import plotly.graph_objects as go
 
 
 def plot_domains(x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, name=None):
@@ -78,7 +79,7 @@ def plot_domains_with_metric(x, y, sqrt_det_g, conditionings, name=None):
     plt.show()
 
 
-def plot_domains_3d(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, name=None):
+def plot_domains_3d(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, charts_mu, charts_std, name=None):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
     ax.set_title("Combined 3D Plot")
@@ -92,6 +93,11 @@ def plot_domains_3d(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, n
     for i in range(len(x)):
         p = decoder.apply({"params": d_params}, np.stack([x[i], y[i]], axis=1), conditionings_list[i])
         p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
+
+        # Transform back the points
+        p = p * charts_std[i] + charts_mu[i]
+        p_bcs = p_bcs * charts_std[i] + charts_mu[i]
+
         # Plot the domain points
         ax.scatter(p[:, 0], p[:, 1], p[:, 2], s=3, alpha=0.5, label=f"Chart {i}")
 
@@ -119,6 +125,89 @@ def plot_domains_3d(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, n
     if name is not None:
         plt.savefig(name)
     plt.show()
+
+
+def plot_domains_3d_html(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, charts_mu, charts_std, name=None):
+    """
+    Creates an interactive 3D plot of multiple domain charts and saves it as an HTML file.
+    
+    Args:
+        x, y: Lists of x and y coordinates for each chart
+        bcs_x, bcs_y: Lists of boundary condition x and y coordinates
+        bcs: List of boundary condition values
+        decoder: Decoder function
+        conditionings: List of conditioning values
+        d_params: Decoder parameters
+        charts_mu, charts_std: Mean and standard deviation for each chart
+        name (str, optional): File name to save the plot. Defaults to None.
+    """
+    # Create figure
+    fig = go.Figure()
+    
+    conditionings_list = [conditionings[i] for i in range(len(x))]
+    
+    # Find global min and max for consistent colorscale
+    all_bc_values = np.concatenate([bcs[i] for i in range(len(bcs))])
+    vmin, vmax = np.min(all_bc_values), np.max(all_bc_values)
+    
+    # Add domain points and boundary conditions for each chart
+    for i in range(len(x)):
+        # Decode the points
+        p = decoder.apply({"params": d_params}, np.stack([x[i], y[i]], axis=1), conditionings_list[i])
+        p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
+        
+        # Transform back the points
+        p = p * charts_std[i] + charts_mu[i]
+        p_bcs = p_bcs * charts_std[i] + charts_mu[i]
+        
+        # Add domain points
+        fig.add_trace(go.Scatter3d(
+            x=p[:, 0],
+            y=p[:, 1],
+            z=p[:, 2],
+            mode='markers',
+            marker=dict(
+                size=3,
+                opacity=0.5,
+                color=f'rgb({50+40*i}, {100+30*i}, {150+20*i})'  # Different color for each chart
+            ),
+            name=f'Chart {i}'
+        ))
+        
+        # Add boundary condition points
+        fig.add_trace(go.Scatter3d(
+            x=p_bcs[:, 0],
+            y=p_bcs[:, 1],
+            z=p_bcs[:, 2],
+            mode='markers',
+            marker=dict(
+                size=5,
+                color=bcs[i],
+                colorscale='Viridis',
+                cmin=vmin,
+                cmax=vmax,
+                colorbar=dict(title="BC Value")
+            ),
+            name=f'BCs {i}'
+        ))
+    
+    # Set layout properties
+    fig.update_layout(
+        scene=dict(
+            xaxis_title='X',
+            yaxis_title='Y',
+            zaxis_title='Z',
+            aspectmode='cube'
+        ),
+        margin=dict(l=0, r=0, b=0, t=30),
+        title="Combined 3D Domains"
+    )
+    
+    # Save as HTML if name is provided
+    if name is not None:
+        fig.write_html(name)
+    
+    return fig
 
 
 def plot_domains_3d_with_metric(x, y, decoder, sqrt_det_g, conditionings, d_params, name=None):
@@ -152,7 +241,7 @@ def plot_domains_3d_with_metric(x, y, decoder, sqrt_det_g, conditionings, d_para
     plt.show()
 
 
-def plot_combined_3d_with_metric(x, y, decoder, sqrt_det_g, conditionings, d_params, name=None):
+def plot_combined_3d_with_metric(x, y, decoder, sqrt_det_g, conditionings, d_params, charts_mu, charts_std, name=None):
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
     ax.set_title("Combined 3D Plot with Metric Coloring")
@@ -164,6 +253,7 @@ def plot_combined_3d_with_metric(x, y, decoder, sqrt_det_g, conditionings, d_par
         points_3d = decoder.apply(
             {"params": d_params}, jnp.stack([x[i], y[i]],  axis=1), conditionings_list[i]
         )
+        points_3d = points_3d * charts_std[i] + charts_mu[i]
         x_3d, y_3d, z_3d = points_3d[:, 0], points_3d[:, 1], points_3d[:, 2]
 
         # Calculate the color values using sqrt_det_gs

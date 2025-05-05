@@ -7,6 +7,7 @@ from functools import partial
 from torch.utils.data import Dataset
 import networkx as nx
 from sklearn.neighbors import KDTree
+import scipy.linalg
 
 
 def create_graph(
@@ -204,7 +205,7 @@ class SphereDataset(Dataset):
         # Apply rotation
         return (scale * R @ self.charts[chart_id].T).T
 
-    def get_rotated_scaled_deformed_points(self, chart_id, deformation_magnitude=0.0):
+    def get_rotated_scaled_deformed_points(self, chart_id, t=0.0):
         """
         Apply rotation, scaling, and a smooth deformation to the chart points.
         
@@ -242,41 +243,15 @@ class SphereDataset(Dataset):
         # Apply rotation and scaling
         points = (scale * R @ self.charts[chart_id].T).T
         
-        # Skip deformation if magnitude is 0
-        if deformation_magnitude == 0.0:
-            return points
-        
         # Apply a smooth, invertible deformation (diffeomorphism)
-        # Using a sinusoidal perturbation as it's smooth and can be made small enough to remain invertible
-        freqs = np.random.uniform(1.0, 3.0, size=3)  # Different frequencies for each dimension
-        phases = np.random.uniform(0.0, 2*np.pi, size=3)  # Random phase shifts
+
+        M = np.random.normal(0, 1, (3, 3))
+        TrM = np.trace(M)
+        M = M - ( TrM * np.eye(3) / 3)
         
-        # Calculate normalized radius from origin for smooth falloff near poles
-        radius = np.linalg.norm(points, axis=1, keepdims=True)
-        normalized_points = points / radius  # Direction vectors
+        points = (scipy.linalg.expm(t * M) @ points.T).T
         
-        # Create deformation vector field based on sinusoidal pattern
-        deformation = np.zeros_like(points)
-        for i in range(3):
-            deformation[:, i] = np.sin(freqs[i] * points[:, (i+1)%3] + phases[i]) * \
-                               np.cos(freqs[i] * points[:, (i+2)%3] + phases[i])
-        
-        # Ensure deformation preserves the spherical structure by projecting it tangent to the sphere
-        deformation -= np.sum(deformation * normalized_points, axis=1, keepdims=True) * normalized_points
-        
-        # Scale the deformation by the provided magnitude
-        deformation *= deformation_magnitude
-        
-        # Apply the deformation
-        deformed_points = points + deformation
-        
-        # Re-normalize to ensure points stay on a sphere-like surface
-        # This helps maintain the invertibility of the transformation
-        # if np.random.random() < 0.5:  # Randomly decide whether to re-normalize
-        #     new_radius = np.linalg.norm(deformed_points, axis=1, keepdims=True)
-        #     deformed_points = deformed_points * (radius / new_radius)
-        
-        return deformed_points
+        return points
 
     def __len__(self):
         return 100000000 # self.num_points
@@ -284,8 +259,8 @@ class SphereDataset(Dataset):
     def __getitem__(self, idx):
         supernode_idxs = self.random_supernode_idxs[np.random.randint(0, len(self.random_supernode_idxs))]
         chart_id = np.random.randint(0, len(self.charts))
-        # points = self.get_rotated_scaled_points(chart_id)
-        points = self.get_rotated_scaled_deformed_points(chart_id, deformation_magnitude=1.0)
+        points = self.get_rotated_scaled_points(chart_id)
+        # points = self.get_rotated_scaled_deformed_points(chart_id, t=0.3)
         mu = points.mean(axis=0)
         sigma = points.std(axis=0)
         points = (points - mu) / sigma

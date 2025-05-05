@@ -42,6 +42,7 @@ from pinns.eikonal_universal_autoencoder.plot import (
     plot_domains_with_metric,
     plot_combined_3d_with_metric,
     plot_correlation,
+    plot_domains_3d_html
 )
 
 import numpy as np
@@ -84,8 +85,14 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         loaded_boundary_indices,
     ) = load_charts3d(config.dataset.charts_path)
 
+    charts_mu = {}
+    charts_std = {}
     for key in loaded_charts3d.keys():
-        loaded_charts3d[key] = loaded_charts3d[key]/4.
+        mu = loaded_charts3d[key].mean(axis=0)
+        std = loaded_charts3d[key].std(axis=0)
+        charts_mu[key] = mu
+        charts_std[key] = std
+        loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
 
     (
         inv_metric_tensor,
@@ -103,8 +110,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         N=config.N,
         idxs=config.idxs,
     )
-
-
 
     np.save(
         config.dataset.charts_path + "/known_solution.npy",
@@ -137,7 +142,23 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             decoder=decoder,
             conditionings=conditionings,
             d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
             name=Path(config.figure_path) / "domains_3d.png",
+        )
+
+        plot_domains_3d_html(
+            x,
+            y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            decoder=decoder,
+            conditionings=conditionings,
+            d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
+            name=Path(config.figure_path) / "domains_3d.html",
         )
 
         plot_domains_with_metric(
@@ -155,6 +176,8 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             sqrt_det_g=sqrt_det_g,
             conditionings=conditionings,
             d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
             name=Path(config.figure_path) / "combined_3d_with_metric.png",
         )
 

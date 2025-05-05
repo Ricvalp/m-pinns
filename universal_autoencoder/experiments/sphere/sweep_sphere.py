@@ -4,21 +4,28 @@ from pathlib import Path
 
 
 sweep_params = {
-    "config.dataset.num_supernodes": [32, 64, 128],
-    "config.train.batch_size": [64, 128],
-    "config.train.lr": [1e-4, 1e-5, 1e-6],
+    "config.dataset.num_supernodes": [32, 64, 128, 256, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+    "config.train.batch_size": [64, 128, 64, 32, 64, 64, 64, 64, 64, 64, 64, 64, 64],
+    "config.train.lr": [1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4],
+    "config.encoder_supernodes_cfg.max_degree": [5, 5, 5, 10, 10, 10, 5, 5, 5, 10, 10, 10, 5],
+    "config.encoder_supernodes_cfg.coord_enc_dim": [32, 64, 128, 64, 32, 64, 128, 64, 32, 64, 128, 64, 32],
+    "config.modulated_siren_cfg.omega_0": [1.0, 1.0, 3.0, 5.0, 1.0, 1.0, 3.0, 5.0, 1.0, 1.0, 3.0, 5.0, 1.0],
+    "config.modulated_siren_cfg.num_layers": [2, 2, 3, 4, 2, 2, 3, 4, 2, 2, 3, 4, 2],
+    "config.encoder_supernodes_cfg.enc_dim": [64, 32, 64, 32, 64, 32, 64, 64, 64, 64, 64, 64, 64],
+    "config.encoder_supernodes_cfg.gnn_dim": [64, 32, 64, 32, 64, 32, 64, 64, 64, 64, 64, 64, 64],
 }
 
-sweep_params_2 = {
-    "config.encoder_supernodes_cfg.coord_enc_dim": [64, 128],
-    "config.modulated_siren_cfg.hidden_dim": [64, 128, 256],
-    "config.modulated_siren_cfg.num_layers": [2, 3, 4],
-}
+# sweep_params_2 = {
+#     "config.encoder_supernodes_cfg.coord_enc_dim": [32, 64, 128, 64],
+#     "config.modulated_siren_cfg.omega_0": [1.0, 1.0, 3.0, 5.0],
+#     "config.modulated_siren_cfg.num_layers": [2, 2, 3, 4],
+# }
+
 
 # Generate all combinations of parameters
 
 # all_combinations = list(zip(*sweep_params.values()))
-all_combinations = list(product(*sweep_params.values())) + list(product(*sweep_params_2.values()))
+all_combinations = list(zip(*sweep_params.values())) # + list(zip(*sweep_params_2.values())) + list(zip(*sweep_params_3.values()))
 
 print(all_combinations)
 

@@ -21,8 +21,8 @@ def get_config():
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
-    config.autoencoder_checkpoint.checkpoint_path = "./universal_autoencoder/checkpoints/tlaovhie"
-    config.autoencoder_checkpoint.step = 100
+    config.autoencoder_checkpoint.checkpoint_path = "./universal_autoencoder/experiments/sphere/checkpoints/g0oqvu0n"
+    config.autoencoder_checkpoint.step = 40000
 
     # Weights & Biases
     config.wandb = wandb = ml_collections.ConfigDict()
