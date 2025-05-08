@@ -10,8 +10,13 @@ from samplers import (
 
 from jaxpi.utils import load_config
 
-from pinns.eikonal_autodecoder.get_dataset import get_dataset
-from pinns.eikonal_autodecoder.plot import plot_charts_solution
+from chart_autoencoder import (
+    get_metric_tensor_and_sqrt_det_g_universal_autodecoder,
+    load_charts3d,
+)
+
+from pinns.eikonal_universal_autoencoder.get_dataset import get_dataset
+from pinns.eikonal_universal_autoencoder.plot import plot_charts_solution
 import numpy as np
 
 
@@ -21,14 +26,40 @@ def generate_data(config: ml_collections.ConfigDict):
         Path(config.autoencoder_checkpoint.checkpoint_path) / "cfg.json",
     )
 
+    (
+        loaded_charts3d,
+        loaded_charts_idxs,
+        loaded_boundaries,
+        loaded_boundary_indices,
+    ) = load_charts3d(config.dataset.charts_path)
+
+    charts_mu = {}
+    charts_std = {}
+    for key in loaded_charts3d.keys():
+        mu = loaded_charts3d[key].mean(axis=0)
+        std = loaded_charts3d[key].std(axis=0)
+        charts_mu[key] = mu
+        charts_std[key] = std
+        loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
+
+    (
+        inv_metric_tensor,
+        sqrt_det_g,
+        decoder,
+    ), (conditionings, d_params) = get_metric_tensor_and_sqrt_det_g_universal_autodecoder(
+        autoencoder_cfg=autoencoder_config,
+        cfg=config,
+        charts=loaded_charts3d,
+        inverse=True,
+    )
+
     x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, charts3d = get_dataset(
-        charts_path=autoencoder_config.dataset.charts_path,
+        charts_path=config.dataset.charts_path,
         N=config.N,
         idxs=config.idxs,
     )
 
     Path(config.figure_path).mkdir(parents=True, exist_ok=True)
-
     Path(config.training.batches_path).mkdir(parents=True, exist_ok=True)
 
     plot_charts_solution(

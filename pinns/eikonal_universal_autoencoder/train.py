@@ -85,11 +85,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         loaded_boundary_indices,
     ) = load_charts3d(config.dataset.charts_path)
 
-    charts_mu = {}
-    charts_std = {}
+    charts_mu = np.zeros((len(loaded_charts3d.keys()), 3))
+    charts_std = np.zeros((len(loaded_charts3d.keys()), ))
     for key in loaded_charts3d.keys():
         mu = loaded_charts3d[key].mean(axis=0)
-        std = loaded_charts3d[key].std(axis=0)
+        std = loaded_charts3d[key].std()
         charts_mu[key] = mu
         charts_std[key] = std
         loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
@@ -181,6 +181,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             name=Path(config.figure_path) / "combined_3d_with_metric.png",
         )
 
+    # assert False, "Stop here after plotting"
 
     bcs_sampler = iter(
         UniformBCSampler(
@@ -189,11 +190,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             bcs=bcs,
             num_charts=len(x),
             batch_size=config.training.batch_size,
-            # bcs_batches_path=(
-            #     config.training.batches_path + "bcs_batches.npy",
-            #     config.training.batches_path + "bcs_values.npy",
-            # ),
-            # load_existing_batches=config.training.load_existing_batches,
+            bcs_batches_path=(
+                config.training.batches_path + "bcs_batches.npy",
+                config.training.batches_path + "bcs_values.npy",
+            ),
+            load_existing_batches=config.training.load_existing_batches,
         )
     )
 
@@ -223,10 +224,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         config,
         inv_metric_tensor=inv_metric_tensor,
         sqrt_det_g=sqrt_det_g,
-        d_params=d_params,
+        conditionings=conditionings,
         bcs_charts=jnp.array(list(bcs.keys())),
         boundaries=(boundaries_x, boundaries_y),
         num_charts=num_charts,
+        mu=charts_mu,
+        std=charts_std,
     )
 
     _, _, _, _, eval_x, eval_y, u_eval, _ = get_dataset(
@@ -332,7 +335,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     logging.info(f"MSE: {MSE}")
     logging.info(f"Correlation: {corr}")
 
-    write_to_csv(MSE, corr, config)
+    # write_to_csv(MSE, corr, config)
 
     return model
 

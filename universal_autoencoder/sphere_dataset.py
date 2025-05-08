@@ -262,7 +262,7 @@ class SphereDataset(Dataset):
         points = self.get_rotated_scaled_points(chart_id)
         # points = self.get_rotated_scaled_deformed_points(chart_id, t=0.3)
         mu = points.mean(axis=0)
-        sigma = points.std(axis=0)
+        sigma = points.std()
         points = (points - mu) / sigma
         return points, supernode_idxs, chart_id
 

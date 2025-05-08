@@ -13,7 +13,7 @@ def get_config():
     # # # # # # # # # # # # # # #  Charts to fit  # # # # # # # # # # #
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-    cfg.charts_to_fit = (0, 1)
+    cfg.charts_to_fit = None # (0, 1)
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # # #  Wandb  # # # # # # # # # # # # # # #
@@ -55,7 +55,7 @@ def get_config():
     cfg.model.n_latent = 2
     cfg.model.rff_dim = 128
     cfg.model.center = 0.5
-    cfg.model.init_scale = 1.5
+    cfg.model.init_scale = 2.5
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # # #  Dataset  # # # # # # # # # # # # # # #
@@ -72,7 +72,7 @@ def get_config():
 
     cfg.train = ConfigDict()
     cfg.train.batch_size = 128
-    cfg.train.num_epochs = 100
+    cfg.train.num_epochs = 300
     cfg.train.lr = 1e-4
     cfg.train.reg_lambda = 0.1
     cfg.train.weight_decay = 1e-3

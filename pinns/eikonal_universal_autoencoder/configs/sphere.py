@@ -11,7 +11,7 @@ def get_config():
     config.plot = True
 
     config.mode = "train"
-    config.N = 20  # Number of gt points in the training set
+    config.N = 50  # Number of gt points in the training set
     config.idxs = None
 
     config.num_supernodes = 32
@@ -21,8 +21,8 @@ def get_config():
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
-    config.autoencoder_checkpoint.checkpoint_path = "./universal_autoencoder/experiments/sphere/checkpoints/g0oqvu0n"
-    config.autoencoder_checkpoint.step = 40000
+    config.autoencoder_checkpoint.checkpoint_path = "./universal_autoencoder/experiments/sphere/checkpoints/8g8jwopb"
+    config.autoencoder_checkpoint.step = 300000
 
     # Weights & Biases
     config.wandb = wandb = ml_collections.ConfigDict()
@@ -72,16 +72,18 @@ def get_config():
     training.batch_size = 128  # 1024
     training.lbfgs_max_steps = 0
 
-    training.load_existing_batches = True
-    training.res_batches_path = "pinns/eikonal_autodecoder/sphere/data/res_batches.npy"
-    training.boundary_batches_path = (
-        "pinns/eikonal_autodecoder/sphere/data/boundary_batches.npy"
-    )
-    training.boundary_pairs_idxs_path = (
-        "pinns/eikonal_autodecoder/sphere/data/boundary_pairs_idxs.npy"
-    )
-    training.bcs_batches_path = "pinns/eikonal_autodecoder/sphere/data/bcs_batches.npy"
-    training.bcs_values_path = "pinns/eikonal_autodecoder/sphere/data/bcs_values.npy"
+    training.load_existing_batches = False
+    training.batches_path = "pinns/eikonal_universal_autoencoder/sphere/data"
+
+    # training.res_batches_path = "pinns/eikonal_universal_autoencoder/sphere/data/res_batches.npy"
+    # training.boundary_batches_path = (
+    #     "pinns/eikonal_universal_autoencoder/sphere/data/boundary_batches.npy"
+    # )
+    # training.boundary_pairs_idxs_path = (
+    #     "pinns/eikonal_universal_autoencoder/sphere/data/boundary_pairs_idxs.npy"
+    # )
+    # training.bcs_batches_path = "pinns/eikonal_universal_autoencoder/sphere/data/bcs_batches.npy"
+    # training.bcs_values_path = "pinns/eikonal_universal_autoencoder/sphere/data/bcs_values.npy"
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
@@ -90,13 +92,13 @@ def get_config():
         {"bcs": 1.0, "res": 1.0, "bc": 1.0}
     )
     weighting.momentum = 0.9
-    weighting.update_every_steps = 100
+    weighting.update_every_steps = 100000
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()
-    logging.log_every_steps = 10000
-    logging.eval_every_steps = 10000
-    logging.num_eval_points = 2000
+    logging.log_every_steps = 100
+    logging.eval_every_steps = 1000
+    logging.num_eval_points = 5000
 
     logging.log_errors = False
     logging.log_losses = True
@@ -108,22 +110,23 @@ def get_config():
     config.profiler = profiler = ml_collections.ConfigDict()
     profiler.start_step = 200
     profiler.end_step = 210
-    profiler.log_dir = "pinns/eikonal_autodecoder/sphere/profiler"
+    profiler.log_dir = "pinns/eikonal_universal_autoencoder/sphere/profiler"
 
     # Saving
     config.saving = saving = ml_collections.ConfigDict()
-    saving.checkpoint_dir = "pinns/eikonal_autodecoder/sphere/checkpoints/"
+    saving.checkpoint_dir = "pinns/eikonal_universal_autoencoder/sphere/checkpoints/"
     saving.save_every_steps = 5000
     saving.num_keep_ckpts = 5
 
     # Eval
     config.eval = eval = ml_collections.ConfigDict()
     eval.eval_with_last_ckpt = False
-    eval.checkpoint_dir = "pinns/eikonal_autodecoder/sphere/checkpoints/best/6jvovynq"
+    eval.checkpoint_dir = "pinns/eikonal_universal_autoencoder/sphere/checkpoints/best/6jvovynq"
     eval.step = 179999
     eval.N = 2000
     eval.use_existing_solution = False
-    eval.solution_path = "pinns/eikonal_autodecoder/sphere/eval/"
+    eval.solution_path = "pinns/eikonal_universal_autoencoder/sphere/eval/"
+    eval.plot_everything = True
 
     # Input shape for initializing Flax models
     config.input_dim = 2

@@ -372,7 +372,7 @@ def plot_3d_solution(pts, sol, angles, name=None, **kwargs):
     plt.close()
 
 
-def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_val=40.0):
+def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_val=4.0):
     """
     Generates a correlation plot using seaborn and matplotlib.
 

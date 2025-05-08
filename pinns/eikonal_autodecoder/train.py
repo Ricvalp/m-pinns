@@ -102,27 +102,27 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     if config.plot:
 
-        # plot_domains(
-        #     x,
-        #     y,
-        #     boundaries_x,
-        #     boundaries_y,
-        #     bcs_x=bcs_x,
-        #     bcs_y=bcs_y,
-        #     bcs=bcs,
-        #     name=Path(config.figure_path) / "domains.png",
-        # )
+        plot_domains(
+            x,
+            y,
+            boundaries_x,
+            boundaries_y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            name=Path(config.figure_path) / "domains.png",
+        )
 
-        # plot_domains_3d(
-        #     x,
-        #     y,
-        #     bcs_x=bcs_x,
-        #     bcs_y=bcs_y,
-        #     bcs=bcs,
-        #     decoder=decoder,
-        #     d_params=d_params,
-        #     name=Path(config.figure_path) / "domains_3d.png",
-        # )
+        plot_domains_3d(
+            x,
+            y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            decoder=decoder,
+            d_params=d_params,
+            name=Path(config.figure_path) / "domains_3d.png",
+        )
 
         plot_domains_with_metric(
             x,
@@ -152,7 +152,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             #     config.training.batches_path + "bcs_batches.npy",
             #     config.training.batches_path + "bcs_values.npy",
             # ),
-            # load_existing_batches=config.training.load_existing_batches,
+            load_existing_batches=False, # config.training.load_existing_batches,
         )
     )
 
@@ -291,7 +291,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     logging.info(f"MSE: {MSE}")
     logging.info(f"Correlation: {corr}")
 
-    write_to_csv(MSE, corr, config)
+    # write_to_csv(MSE, corr, config)
 
     return model
 
@@ -339,7 +339,11 @@ def log_correlation(
     mesh_sol = sol[gt_sol_pts_idxs]
 
     fig = plot_correlation(
-        mesh_sol, gt_sol, name=config.figure_path + f"/eikonal_correlation_{step}.png"
+        mesh_sol,
+        gt_sol,
+        name=config.figure_path + f"/eikonal_correlation_{step}.png",
+        min_val=0.0,
+        max_val=5.0,
     )
 
     wandb.log({"correlation": fig}, step)

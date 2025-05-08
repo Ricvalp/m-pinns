@@ -8,15 +8,16 @@ def get_config():
 
     config.figure_path = "./figures/" + str(datetime.now().strftime("%Y%m%d-%H%M%S"))
 
-    config.plot = False
+    config.plot = True
 
     config.mode = "train"
-    config.N = 1  # Number of gt points in the training set
+    config.N = 5  # Number of gt points in the training set
+    config.idxs = None
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
     config.autoencoder_checkpoint.checkpoint_path = "./fit/checkpoints/sphere"
-    config.autoencoder_checkpoint.step = 100
+    config.autoencoder_checkpoint.step = 300
 
     # Weights & Biases
     config.wandb = wandb = ml_collections.ConfigDict()
@@ -39,7 +40,7 @@ def get_config():
     #     {"period": (jnp.pi,), "axis": (1,), "trainable": (False,)}
     # )
 
-    arch.fourier_emb = ml_collections.ConfigDict({"embed_scale": 1, "embed_dim": 32})
+    arch.fourier_emb = ml_collections.ConfigDict({"embed_scale": 1, "embed_dim": 16})
     arch.reparam = ml_collections.ConfigDict(
         {"type": "weight_fact", "mean": 0.5, "stddev": 0.1}
     )
@@ -47,7 +48,7 @@ def get_config():
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
     optim.grad_accum_steps = 0
-    optim.optimizer = "Adam"  #  "AdamWarmupCosineDecay"
+    optim.optimizer = "Adam" # "AdamWarmupCosineDecay" #  
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
@@ -57,40 +58,41 @@ def get_config():
     optim.decay_rate = 0.9
 
     # cosine decay
-    optim.warmup_steps = 1000
+    optim.warmup_steps = 500
     optim.decay_steps = 10000
 
     # Training
     config.training = training = ml_collections.ConfigDict()
     training.max_steps = 100000
-    training.batch_size = 128  # 1024
+    training.batch_size = 1024
     training.lbfgs_max_steps = 0
 
-    training.load_existing_batches = True
-    training.res_batches_path = "pinns/eikonal_autodecoder/sphere/data/res_batches.npy"
-    training.boundary_batches_path = (
-        "pinns/eikonal_autodecoder/sphere/data/boundary_batches.npy"
-    )
-    training.boundary_pairs_idxs_path = (
-        "pinns/eikonal_autodecoder/sphere/data/boundary_pairs_idxs.npy"
-    )
-    training.bcs_batches_path = "pinns/eikonal_autodecoder/sphere/data/bcs_batches.npy"
-    training.bcs_values_path = "pinns/eikonal_autodecoder/sphere/data/bcs_values.npy"
+    training.load_existing_batches = True # False # 
+    training.batches_path = "pinns/eikonal_autodecoder/sphere/data/"
+    # training.res_batches_path = "pinns/eikonal_autodecoder/sphere/data/res_batches.npy"
+    # training.boundary_batches_path = (
+    #     "pinns/eikonal_autodecoder/sphere/data/boundary_batches.npy"
+    # )
+    # training.boundary_pairs_idxs_path = (
+    #     "pinns/eikonal_autodecoder/sphere/data/boundary_pairs_idxs.npy"
+    # )
+    # training.bcs_batches_path = "pinns/eikonal_autodecoder/sphere/data/bcs_batches.npy"
+    # training.bcs_values_path = "pinns/eikonal_autodecoder/sphere/data/bcs_values.npy"
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
     weighting.scheme = "grad_norm"
     weighting.init_weights = ml_collections.ConfigDict(
-        {"bcs": 1.0, "res": 1.0, "bc": 1.0}
+        {"bcs": 1.0, "res": 1.0, "bc": 0.01}
     )
-    weighting.momentum = 0.9
-    weighting.update_every_steps = 100
+    weighting.momentum = 0.99
+    weighting.update_every_steps = 800000
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()
-    logging.log_every_steps = 10000
-    logging.eval_every_steps = 10000
-    logging.num_eval_points = 2000
+    logging.log_every_steps = 10
+    logging.eval_every_steps = 10
+    logging.num_eval_points = 5000
 
     logging.log_errors = False
     logging.log_losses = True
@@ -118,6 +120,7 @@ def get_config():
     eval.N = 2000
     eval.use_existing_solution = False
     eval.solution_path = "pinns/eikonal_autodecoder/sphere/eval/"
+    eval.plot_everything = True
 
     # Input shape for initializing Flax models
     config.input_dim = 2

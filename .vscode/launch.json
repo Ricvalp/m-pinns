@@ -173,15 +173,15 @@
             },
         },
         {
-            "name": "eval coil eikonal",
+            "name": "eval sphere eikonal universal autoencoder",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "program": "${workspaceFolder}/pinns/eikonal_universal_autoencoder/main.py",
             "args": [
-                "--config=pinns/eikonal_autodecoder/configs/coil.py",
-                "--config.eval.checkpoint_dir=pinns/eikonal_autodecoder/coil/checkpoints/paspfqsd",
+                "--config=pinns/eikonal_universal_autoencoder/configs/sphere.py",
+                "--config.eval.checkpoint_dir=pinns/eikonal_universal_autoencoder/sphere/checkpoints/q3sqo19y",
                 "--config.eval.use_existing_solution=False",
-                "--config.eval.step=14999",
+                "--config.eval.step=15000",
                 "--config.mode=eval"
             ],
             "env": {
@@ -214,7 +214,7 @@
             },
         },
         {
-            "name": "fit eikonal universal autoencoder",
+            "name": "train eikonal universal autoencoder",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/pinns/eikonal_universal_autoencoder/main.py",
@@ -225,6 +225,21 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}",
             },
-        }
+        },
+        {
+            "name": "train eikonal autoencoder",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_autodecoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_autodecoder/configs/sphere.py",
+                "--config.mode=train",
+                "--config.autoencoder_checkpoint.step=300",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "True",
+            },
+        },
     ]
 }

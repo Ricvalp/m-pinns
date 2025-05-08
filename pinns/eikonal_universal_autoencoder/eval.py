@@ -12,10 +12,12 @@ from chart_autoencoder import (
     load_charts,
     find_intersection_indices,
     find_closest_points_to_mesh,
+    get_metric_tensor_and_sqrt_det_g_universal_autodecoder,
+    load_charts3d,
 )
 
-from pinns.eikonal_autodecoder.get_dataset import get_dataset, get_eikonal_gt_solution
-from pinns.eikonal_autodecoder.utils import get_last_checkpoint_dir
+from pinns.eikonal_universal_autoencoder.get_dataset import get_dataset, get_eikonal_gt_solution
+from pinns.eikonal_universal_autoencoder.utils import get_last_checkpoint_dir
 
 from jaxpi.utils import restore_checkpoint, load_config
 from jaxpi.solution import get_final_solution, load_solution, save_solution
@@ -45,28 +47,50 @@ def evaluate(config: ml_collections.ConfigDict):
     eval_config = config.eval
 
     (
+        loaded_charts3d,
+        loaded_charts_idxs,
+        loaded_boundaries,
+        loaded_boundary_indices,
+    ) = load_charts3d(config.dataset.charts_path)
+
+    charts_mu = np.zeros((len(loaded_charts3d.keys()), 3))
+    charts_std = np.zeros((len(loaded_charts3d.keys()), ))
+    for key in loaded_charts3d.keys():
+        mu = loaded_charts3d[key].mean(axis=0)
+        std = loaded_charts3d[key].std()
+        charts_mu[key] = mu
+        charts_std[key] = std
+        loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
+
+    (
         inv_metric_tensor,
         sqrt_det_g,
         decoder,
-    ), d_params = get_metric_tensor_and_sqrt_det_g_autodecoder(
-        charts_config,
-        step=config.autoencoder_checkpoint.step,
+    ), (conditionings, d_params) = get_metric_tensor_and_sqrt_det_g_universal_autodecoder(
+        autoencoder_cfg=charts_config,
+        cfg=config,
+        charts=loaded_charts3d,
         inverse=True,
     )
 
     x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, charts3d = get_dataset(
-        charts_path=charts_config.dataset.charts_path,
-        N=eval_config.N,
+        charts_path=config.dataset.charts_path,
+        N=config.N,
+        idxs=config.idxs,
     )
 
+    num_charts = len(x)
+
     model = models.Eikonal(
-        model_config,
+        config,
         inv_metric_tensor=inv_metric_tensor,
         sqrt_det_g=sqrt_det_g,
-        d_params=d_params,
+        conditionings=conditionings,
         bcs_charts=jnp.array(list(bcs.keys())),
         boundaries=(boundaries_x, boundaries_y),
-        num_charts=len(x),
+        num_charts=num_charts,
+        mu=charts_mu,
+        std=charts_std,
     )
 
     if eval_config.eval_with_last_ckpt:
@@ -76,7 +100,7 @@ def evaluate(config: ml_collections.ConfigDict):
         ckpt_path = Path(eval_config.checkpoint_dir).resolve()
 
     charts, charts_idxs, boundaries, boundary_indices, charts2d = load_charts(
-        charts_path=charts_config.dataset.charts_path,
+        charts_path=config.dataset.charts_path,
     )
 
     eval_name = eval_config.checkpoint_dir.split("/")[-1]
@@ -110,7 +134,7 @@ def evaluate(config: ml_collections.ConfigDict):
         )
 
         mesh_pts, gt_sol = get_eikonal_gt_solution(
-            charts_path=charts_config.dataset.charts_path,
+            charts_path=config.dataset.charts_path,
         )
 
         # gt_sol_pts_idxs, _ = find_intersection_indices(
@@ -179,7 +203,7 @@ def evaluate(config: ml_collections.ConfigDict):
     print(f"Correlation: {jnp.corrcoef(mesh_sol, gt_sol)[0, 1]}")
 
     known_solution = np.load(
-        charts_config.dataset.charts_path + "/known_solution.npy", allow_pickle=True
+        config.dataset.charts_path + "/known_solution.npy", allow_pickle=True
     ).item()
     known_solution = np.concatenate(
         [known_solution[key] for key in known_solution.keys()]

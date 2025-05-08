@@ -69,7 +69,10 @@ class Eikonal(MPINN):
                 yb,
             )
 
-            return jnp.mean(0.25 * (boundary_pred_a - boundary_pred_b) ** 2)
+            avg_pred = (boundary_pred_a + boundary_pred_b) / 2
+            avg_pred = jax.lax.stop_gradient(avg_pred)
+            return jnp.mean((boundary_pred_a - avg_pred) ** 2) + jnp.mean((boundary_pred_b - avg_pred) ** 2)
+            # return jnp.mean(0.25 * (boundary_pred_a - boundary_pred_b) ** 2)
 
         self.compute_bcs_loss = compute_bcs_loss
         self.compute_res_loss = compute_res_loss

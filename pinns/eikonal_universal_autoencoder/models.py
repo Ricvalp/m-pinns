@@ -15,19 +15,24 @@ class Eikonal(MPINN):
         config,
         inv_metric_tensor,
         sqrt_det_g,
-        d_params,
+        conditionings,
         bcs_charts,
         boundaries,
         num_charts,
+        mu,
+        std,
     ):
         super().__init__(config, num_charts=num_charts)
 
         self.sqrt_det_g = sqrt_det_g
         self.inv_metric_tensor = inv_metric_tensor
-        self.d_params = d_params
+        self.d_params = conditionings
 
         self.bcs_charts = bcs_charts
         self.boundaries_x, self.boundaries_y = boundaries
+
+        self.mu = mu
+        self.std = std
 
         self.u_pred_fn = vmap(self.u_net, (None, 0, 0))
 
@@ -37,10 +42,10 @@ class Eikonal(MPINN):
             u_pred = vmap(self.u_net, (None, 0, 0))(params, x, y)
             return jnp.mean((u_pred - bcs) ** 2)
 
-        @partial(vmap, in_axes=(0, 0, 0))
-        def compute_res_loss(params, d_params, res_batches):
+        @partial(vmap, in_axes=(0, 0, 0, 0))
+        def compute_res_loss(params, d_params, res_batches, std):
             x, y = res_batches[:, 0], res_batches[:, 1]
-            r_pred = vmap(self.r_net, (None, None, 0, 0))(params, d_params, x, y)
+            r_pred = vmap(self.r_net, (None, None, 0, 0, None))(params, d_params, x, y, std)
             return jnp.mean(r_pred**2)
 
         @partial(vmap, in_axes=(None, 0, 0))
@@ -86,7 +91,7 @@ class Eikonal(MPINN):
 
     def sqrt_det_g_net(self, d_params, x, y):
         p = jnp.stack([x, y])[None, :]
-        return self.sqrt_det_g(d_params, p)[0]  # check this!
+        return self.sqrt_det_g(d_params, p)[0]
 
     def square_norm_grad_u_net(self, params, d_params, x, y):
 
@@ -99,9 +104,10 @@ class Eikonal(MPINN):
         )
         return norm_grad_u
 
-    def r_net(self, params, d_params, x, y):
+    def r_net(self, params, d_params, x, y, std):
 
-        return self.square_norm_grad_u_net(params, d_params, x, y) - 1
+        return self.square_norm_grad_u_net(params, d_params, x, y) - (std ** 2)
+
 
     def losses(self, params, batch):
 
@@ -114,7 +120,7 @@ class Eikonal(MPINN):
         bcs_loss = bcs_loss[self.bcs_charts]
         bcs_loss = jnp.mean(bcs_loss)
 
-        res_loss = self.compute_res_loss(params, self.d_params, res_batches)
+        res_loss = self.compute_res_loss(params, self.d_params, res_batches, self.std)
         res_loss = jnp.mean(res_loss)
 
         boundary_loss = self.compute_boundary_loss(
