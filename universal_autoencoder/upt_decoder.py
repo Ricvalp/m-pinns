@@ -213,4 +213,6 @@ class DecoderPerceiver(nn.Module):
         x = self.perc(q=query, kv=x)
         x = self.pred(x)
 
+        x = (nn.sigmoid(x) * 2.0) - 1.0
+
         return x

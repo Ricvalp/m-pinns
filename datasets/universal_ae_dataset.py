@@ -1,5 +1,5 @@
 from torch.utils import data
-from typing import Any, Dict, List, Tuple, Union
+
 from datasets.utils import Mesh
 from pathlib import Path
 import numpy as np
@@ -11,7 +11,7 @@ import multiprocessing as mp
 from functools import partial
 import networkx as nx
 from sklearn.neighbors import KDTree
-
+import scipy.linalg
 from chart_autoencoder import fast_region_growing
 
 
@@ -19,17 +19,19 @@ class UniversalAEDataset(data.Dataset):
     def __init__(
         self,
         config,
+        train=True,
     ):
         
         self.config = config.dataset
+        self.train = train
         if self.config.create_dataset:
             m = Mesh(self.config.mesh_path)
             self.verts, self.connectivity = m.verts, m.connectivity
 
             points = sample_points_from_mesh(m, self.config.points_per_unit_area)
             if self.config.subset_cardinality is not None:
-                rng = np.random.default_rng(self.config.seed)
                 if self.config.subset_cardinality < len(points):
+                    rng = np.random.default_rng(self.config.seed)
                     indices = rng.choice(
                         len(points),
                         size=self.config.subset_cardinality - len(m.verts),
@@ -38,45 +40,51 @@ class UniversalAEDataset(data.Dataset):
                     points = points[indices]
 
             self.points = np.concatenate([points, self.verts], axis=0)
-            self.create_charts_dataset()
-        
-        else:
-            self.load_charts_dataset()
-    
-    def create_charts_dataset(self):
+            self._create_charts_dataset()
+            self._load_charts_dataset()
 
-        self.charts = []
-        self.distance_matrix = []
+        else:
+            self._load_charts_dataset()
+        
+        self.num_points = self.charts.shape[1]
+    
+    def _create_charts_dataset(self):
+
+        all_charts = []
+        all_distance_matrix = []
         failed_charts = 0
-        for i in range(self.config.iterations):
+        total_charts = 0
+        for i in range(1, self.config.iterations+1):
             charts, charts_idxs, _ = fast_region_growing(
                 pts=self.points,
                 min_dist=self.config.min_dist,
                 nearest_neighbors=self.config.nearest_neighbors,
             )
 
+            total_charts += len(charts)
+
             normalized_charts = self._normalize_charts(charts)
             distance_matrix = compute_distance_matrix(normalized_charts, self.config.nearest_neighbors)
             for dm, chart in zip(distance_matrix, normalized_charts):
                 if dm is not None:
-                    self.distance_matrix = self.distance_matrix + [dm]
-                    self.charts = self.charts + [chart]
+                    all_distance_matrix = all_distance_matrix + [dm]
+                    all_charts = all_charts + [chart]
                 else:
                     failed_charts += 1
             
-            print(f"Failed charts: {failed_charts}/{len(distance_matrix)}")
+            print(f"Iteration: {i}/{self.config.iterations} ---- Failed charts: {failed_charts}/{total_charts}")
 
             if i%self.config.save_charts_every==0:
                 Path(self.config.charts_path).mkdir(parents=True, exist_ok=True)
-                np.save(self.config.charts_path + f"/charts_{i}.npy", self.charts)
-                np.save(self.config.charts_path + f"/distance_matrix_{i}.npy", self.distance_matrix)
+                np.save(self.config.charts_path + f"/charts_{i}.npy", all_charts)
+                np.save(self.config.charts_path + f"/distance_matrix_{i}.npy", all_distance_matrix)
+                all_charts = []
+                all_distance_matrix = []
 
-
-    def load_charts_dataset(self):
+    def _load_charts_dataset(self):
 
         self.charts = []
         self.distance_matrix = []
-        # List all chart files in the directory
         chart_files = sorted([f for f in os.listdir(self.config.charts_path) if f.startswith("charts_") and f.endswith(".npy")])
         distance_matrix_files = sorted([f for f in os.listdir(self.config.charts_path) if f.startswith("distance_matrix_") and f.endswith(".npy")])
         
@@ -84,33 +92,121 @@ class UniversalAEDataset(data.Dataset):
         assert len(distance_matrix_files) > 0, f"No distance matrix files found in {self.config.charts_path}"
         assert len(chart_files) == len(distance_matrix_files), f"Unequal number of chart files ({len(chart_files)}) and distance matrix files ({len(distance_matrix_files)})"
         
-        for i in range(len(chart_files)):
-            self.charts.append(np.load(self.config.charts_path + f"/charts_{i}.npy"))
-            self.distance_matrix.append(np.load(self.config.charts_path + f"/distance_matrix_{i}.npy"))
+        for chart_file, distance_matrix_file in zip(chart_files, distance_matrix_files):
+            if self.train:
+                self.charts.append(np.load(self.config.charts_path + f"/{chart_file}")[:200])
+                self.distance_matrix.append(np.load(self.config.charts_path + f"/{distance_matrix_file}")[:200])
+            else:
+                self.charts.append(np.load(self.config.charts_path + f"/{chart_file}")[200:250])
+                self.distance_matrix.append(np.load(self.config.charts_path + f"/{distance_matrix_file}")[200:250])
 
         self.charts = np.concatenate(self.charts, axis=0)
         self.distance_matrix = np.concatenate(self.distance_matrix, axis=0)
 
-    
     def _normalize_charts(self, charts):
 
         normalized_charts = []
         for chart_key, chart in charts.items():
             mu = chart.mean(axis=0)
-            std = chart.std(axis=0)
+            std = chart.std()
+            normalized_chart = chart-mu # /std
 
             random_idxs = np.random.choice(len(chart), self.config.num_points, replace=True)
-            normalized_chart = (chart-mu)/std
             normalized_charts.append(normalized_chart[random_idxs])
-
         return normalized_charts
+
+    def _get_rotated_points(self, chart_id):
+
+        # Generate random rotation matrix
+        theta = np.random.uniform(0, 2*np.pi)
+        phi = np.random.uniform(0, 2*np.pi) 
+        psi = np.random.uniform(0, 2*np.pi)
+
+        # Rotation matrix around x axis
+        Rx = np.array([[1, 0, 0],
+                      [0, np.cos(theta), -np.sin(theta)],
+                      [0, np.sin(theta), np.cos(theta)]])
+
+        # Rotation matrix around y axis  
+        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
+                      [0, 1, 0],
+                      [-np.sin(phi), 0, np.cos(phi)]])
+
+        # Rotation matrix around z axis
+        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
+                      [np.sin(psi), np.cos(psi), 0],
+                      [0, 0, 1]])
+
+        # Combined rotation matrix
+        R = Rz @ Ry @ Rx
+
+        # Apply rotation
+        return (R @ self.charts[chart_id].T).T
+
+    def _get_rotated_scaled_deformed_points(self, chart_id, t=0.0):
+        """
+        Apply rotation, scaling, and a smooth deformation to the chart points.
+        
+        Args:
+            chart_id: index of the chart to transform
+            deformation_magnitude: controls the strength of deformation (0.0 = no deformation)
+        
+        Returns:
+            Transformed points
+        """
+        # Generate random rotation matrix
+        theta = np.random.uniform(0, 2*np.pi)
+        phi = np.random.uniform(0, 2*np.pi) 
+        psi = np.random.uniform(0, 2*np.pi)
+        scale = np.random.uniform(0.5, 1.5)
+
+        # Rotation matrix around x axis
+        Rx = np.array([[1, 0, 0],
+                      [0, np.cos(theta), -np.sin(theta)],
+                      [0, np.sin(theta), np.cos(theta)]])
+
+        # Rotation matrix around y axis  
+        Ry = np.array([[np.cos(phi), 0, np.sin(phi)],
+                      [0, 1, 0],
+                      [-np.sin(phi), 0, np.cos(phi)]])
+
+        # Rotation matrix around z axis
+        Rz = np.array([[np.cos(psi), -np.sin(psi), 0],
+                      [np.sin(psi), np.cos(psi), 0],
+                      [0, 0, 1]])
+
+        # Combined rotation matrix
+        R = Rz @ Ry @ Rx
+
+        # Apply rotation and scaling
+        points = (scale * R @ self.charts[chart_id].T).T
+        
+        # Apply a smooth, invertible deformation (diffeomorphism)
+
+        M = np.random.normal(0, 1, (3, 3))
+        TrM = np.trace(M)
+        M = M - ( TrM * np.eye(3) / 3)
+        
+        points = (scipy.linalg.expm(t * M) @ points.T).T
+        
+        return points
+
 
     def __len__(self):
         return 100000 # len(self.charts)
 
     def __getitem__(self, idx):
-        i = np.random.randint(0, len(self.charts))
-        return self.charts[i], self.distance_matrix[i]
+        supernode_idxs = np.random.permutation(self.num_points)[: self.config.num_supernodes]
+        chart_id = np.random.randint(0, len(self.charts))
+        t = np.random.uniform(0, 0.2)
+        points = self._get_rotated_scaled_deformed_points(chart_id, t=0.2)
+        if self.config.normalize_charts:
+            points = self.charts[chart_id]
+            std = points.std()
+            points = points/std
+        else:
+            points = self.charts[chart_id]
+        return points, supernode_idxs, chart_id
 
 
 def create_graph(
@@ -187,7 +283,7 @@ def calculate_distance_matrix_single_process(chart_data, nearest_neighbors):
         print(f"Error creating graph for chart {chart_id}: {e}")
         return None
     
-    distances = dict(nx.all_pairs_shortest_path_length(G, cutoff=None))
+    distances = dict(nx.all_pairs_dijkstra_path_length(G, cutoff=None))
     distances_matrix = np.zeros((len(pts), len(pts)))
     for j in range(len(pts)):
         for k in range(len(pts)):
@@ -253,27 +349,19 @@ def load_config():
     dataset.seed = 37
     dataset.create_dataset = True
     dataset.mesh_path = "./datasets/coil/coil_1.2_MM.obj"
-    dataset.charts_path = "/home/rvalperga/mpinns/datasets/coil/uae_charts"
+    dataset.charts_path = "/scratch-shared/rvalperga/mpinns/datasets/coil/uae_dataset" # "/home/rvalperga/mpinns/datasets/coil/uae_charts"
     dataset.points_per_unit_area = 3
-    dataset.subset_cardinality = 100000
-    dataset.num_points = 1000
-    dataset.iterations = 100
-    dataset.min_dist = 10.
+    dataset.subset_cardinality = None
+    dataset.num_points = 500
+    dataset.iterations = 30
+    dataset.min_dist = 9.
     dataset.nearest_neighbors = 10
     dataset.save_charts_every = 10
-
+    dataset.train = True
     return config
 
 
 if __name__=="__main__":
 
-    from torch.utils.data import DataLoader
-    from tqdm import tqdm
-
     config = load_config()
     dataset = UniversalAEDataset(config=config)
-
-    data_loader = DataLoader(dataset, batch_size=32, shuffle=False)
-
-    for batch in tqdm(data_loader):
-        assert True

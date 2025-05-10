@@ -241,5 +241,19 @@
                 "JAX_DISABLE_JIT": "True",
             },
         },
+        {
+            "name": "train eikonal universal autoencoder coil",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/pinns/eikonal_universal_autoencoder/main.py",
+            "args": [
+                "--config=pinns/eikonal_universal_autoencoder/configs/coil.py",
+                "--config.mode=train",
+            ],
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}",
+                "JAX_DISABLE_JIT": "False",
+            },
+        },
     ]
 }

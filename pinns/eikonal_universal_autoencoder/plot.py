@@ -25,14 +25,15 @@ def plot_domains(x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, name=None)
         row, col = divmod(i, cols)
         ax[row][col].set_title(f"Chart {i}")
         scatter = ax[row][col].scatter(x[i], y[i], s=3, c="b")
-        scatter_bcs = ax[row][col].scatter(
-            bcs_x[i], bcs_y[i], s=50, c=bcs[i], label="BCs"
-        )
-        # Add colorbar for boundary conditions
-        if len(np.unique(bcs[i])) > 1:  # Only add colorbar if there are multiple colors
-            fig.colorbar(
-                scatter_bcs, ax=ax[row][col], orientation="vertical", label="BC Value"
+        if i in bcs_x.keys():
+            scatter_bcs = ax[row][col].scatter(
+                bcs_x[i], bcs_y[i], s=50, c=bcs[i], label="BCs"
             )
+            # Add colorbar for boundary conditions
+            if len(np.unique(bcs[i])) > 1:  # Only add colorbar if there are multiple colors
+                fig.colorbar(
+                    scatter_bcs, ax=ax[row][col], orientation="vertical", label="BC Value"
+                )
 
         # Plot boundaries for current chart
         if i in boundaries_x:
@@ -87,31 +88,33 @@ def plot_domains_3d(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_params, c
     conditionings_list = [conditionings[i] for i in range(len(x))]
 
     # Create a single colorbar for all BC points
-    all_bc_values = np.concatenate([bcs[i] for i in range(len(bcs))])
+    all_bc_values = np.concatenate([bcs[i] for i in range(len(bcs)) if i in bcs_x.keys()])
     vmin, vmax = np.min(all_bc_values), np.max(all_bc_values)
 
     for i in range(len(x)):
         p = decoder.apply({"params": d_params}, np.stack([x[i], y[i]], axis=1), conditionings_list[i])
-        p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
+        if i in bcs_x.keys():
+            p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
 
         # Transform back the points
         p = p * charts_std[i] + charts_mu[i]
-        p_bcs = p_bcs * charts_std[i] + charts_mu[i]
+        if i in bcs_x.keys():
+            p_bcs = p_bcs * charts_std[i] + charts_mu[i]
 
         # Plot the domain points
         ax.scatter(p[:, 0], p[:, 1], p[:, 2], s=3, alpha=0.5, label=f"Chart {i}")
 
         # Plot the boundary conditions with colors
-        scatter_bcs = ax.scatter(
-            p_bcs[:, 0],
-            p_bcs[:, 1],
-            p_bcs[:, 2],
-            c=bcs[i],
-            s=50,
-            vmin=vmin,
-            vmax=vmax,
-            label=f"BCs {i}",
-        )
+        if i in bcs_x.keys():
+            scatter_bcs = ax.scatter(
+                p_bcs[:, 0],
+                p_bcs[:, 1],
+                p_bcs[:, 2],
+                c=bcs[i],
+                s=50,
+                vmin=vmin,
+                vmax=vmax,
+            )
 
     # Add a single colorbar for all boundary conditions
     cbar = fig.colorbar(scatter_bcs, ax=ax, orientation="vertical", label="BC Value")
@@ -147,18 +150,20 @@ def plot_domains_3d_html(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_para
     conditionings_list = [conditionings[i] for i in range(len(x))]
     
     # Find global min and max for consistent colorscale
-    all_bc_values = np.concatenate([bcs[i] for i in range(len(bcs))])
+    all_bc_values = np.concatenate([bcs[i] for i in range(len(bcs)) if i in bcs_x.keys()])
     vmin, vmax = np.min(all_bc_values), np.max(all_bc_values)
     
     # Add domain points and boundary conditions for each chart
     for i in range(len(x)):
         # Decode the points
         p = decoder.apply({"params": d_params}, np.stack([x[i], y[i]], axis=1), conditionings_list[i])
-        p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
+        if i in bcs_x.keys():
+            p_bcs = decoder.apply({"params": d_params}, np.stack([bcs_x[i], bcs_y[i]], axis=1), conditionings_list[i])
         
         # Transform back the points
         p = p * charts_std[i] + charts_mu[i]
-        p_bcs = p_bcs * charts_std[i] + charts_mu[i]
+        if i in bcs_x.keys():
+            p_bcs = p_bcs * charts_std[i] + charts_mu[i]
         
         # Add domain points
         fig.add_trace(go.Scatter3d(
@@ -175,21 +180,22 @@ def plot_domains_3d_html(x, y, bcs_x, bcs_y, bcs, decoder, conditionings, d_para
         ))
         
         # Add boundary condition points
-        fig.add_trace(go.Scatter3d(
-            x=p_bcs[:, 0],
-            y=p_bcs[:, 1],
-            z=p_bcs[:, 2],
-            mode='markers',
-            marker=dict(
+        if i in bcs_x.keys():
+            fig.add_trace(go.Scatter3d(
+                x=p_bcs[:, 0],
+                y=p_bcs[:, 1],
+                z=p_bcs[:, 2],
+                mode='markers',
+                marker=dict(
                 size=5,
                 color=bcs[i],
                 colorscale='Viridis',
                 cmin=vmin,
                 cmax=vmax,
                 colorbar=dict(title="BC Value")
-            ),
-            name=f'BCs {i}'
-        ))
+                ),
+                name=f'BCs {i}'
+            ))
     
     # Set layout properties
     fig.update_layout(
@@ -576,3 +582,83 @@ def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
 
     plt.show()
     return fig
+
+
+def plot_charts_with_supernodes(chart, supernode_idxs, name=None):
+    """
+    Plot a batch of charts with the supernodes highlighted in a different color.
+    
+    Args:
+        chart: Batch of 3D points representing charts
+        supernode_idxs: Indices of supernodes for each chart
+        distance_matrix: Distance matrix of the charts
+        name: Optional path to save the figure
+    """
+    # Determine grid layout
+    num_samples = min(16, len(chart))
+    rows = int(np.ceil(np.sqrt(num_samples)))
+    cols = int(np.ceil(num_samples / rows))
+    
+    # Compute global min/max across all charts for consistent scaling
+    x_min_global = np.min([chart[i][:, 0].min() for i in range(num_samples)])
+    x_max_global = np.max([chart[i][:, 0].max() for i in range(num_samples)])
+    y_min_global = np.min([chart[i][:, 1].min() for i in range(num_samples)])
+    y_max_global = np.max([chart[i][:, 1].max() for i in range(num_samples)])
+    z_min_global = np.min([chart[i][:, 2].min() for i in range(num_samples)])
+    z_max_global = np.max([chart[i][:, 2].max() for i in range(num_samples)])
+    
+    # Add 10% padding to the global ranges
+    x_pad = 0.1 * (x_max_global - x_min_global)
+    y_pad = 0.1 * (y_max_global - y_min_global)
+    z_pad = 0.1 * (z_max_global - z_min_global)
+    
+    # Compute global limits
+    x_limits = [x_min_global - x_pad, x_max_global + x_pad]
+    y_limits = [y_min_global - y_pad, y_max_global + y_pad]
+    z_limits = [z_min_global - z_pad, z_max_global + z_pad]
+    
+    
+    fig = plt.figure(figsize=(12, num_samples))
+    
+    for i in range(num_samples):
+        ax = fig.add_subplot(rows, cols, i+1, projection='3d')
+        
+        # Create a mask for supernodes
+        is_supernode = np.zeros(len(chart[i]), dtype=bool)
+        is_supernode[supernode_idxs[i]] = True
+        
+        # Plot regular points with consistent colormap scaling
+        ax.scatter(
+            chart[i][~is_supernode, 0],
+            chart[i][~is_supernode, 1],
+            chart[i][~is_supernode, 2],
+            alpha=0.5,
+            s=10,
+            label='Regular Points',
+        )
+        
+        # Plot supernodes with different color
+        ax.scatter(
+            chart[i][is_supernode, 0],
+            chart[i][is_supernode, 1],
+            chart[i][is_supernode, 2],
+            c='red',
+            alpha=1.0,
+            s=30,
+            label='Supernodes'
+        )
+        
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        
+        # Use global limits for all plots
+        ax.set_xlim(x_limits)
+        ax.set_ylim(y_limits)
+        ax.set_zlim(z_limits)
+        ax.legend()
+    
+    plt.tight_layout()
+    if name is not None:
+        plt.savefig(name, dpi=300)
+    plt.close()

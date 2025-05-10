@@ -154,7 +154,7 @@ def get_metric_tensor_and_sqrt_det_g_universal_autodecoder(autoencoder_cfg, cfg,
     model_apply_fn = model.apply
 
 
-    init_points, supernode_idxs = jnp.zeros((16, 1000, 3)), jax.random.randint(jax.random.PRNGKey(0), (16, 32), 0, 128)
+    init_points, supernode_idxs = jnp.zeros((16, autoencoder_cfg.dataset.num_points, 3)), jax.random.randint(jax.random.PRNGKey(0), (16, autoencoder_cfg.dataset.num_supernodes), 0, 128)
     params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs)["params"]
     optimizer = optax.adam(learning_rate=0.1)
     terget = train_state.TrainState.create(

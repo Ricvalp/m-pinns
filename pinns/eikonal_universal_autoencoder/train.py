@@ -37,6 +37,7 @@ from pinns.eikonal_universal_autoencoder.get_dataset import (
 )
 
 from pinns.eikonal_universal_autoencoder.plot import (
+    plot_charts_with_supernodes,
     plot_domains,
     plot_domains_3d,
     plot_domains_with_metric,
@@ -89,10 +90,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     charts_std = np.zeros((len(loaded_charts3d.keys()), ))
     for key in loaded_charts3d.keys():
         mu = loaded_charts3d[key].mean(axis=0)
-        std = loaded_charts3d[key].std()
         charts_mu[key] = mu
+        loaded_charts3d[key] = loaded_charts3d[key] - mu
+        std = loaded_charts3d[key].std()
         charts_std[key] = std
-        loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
+        loaded_charts3d[key] = loaded_charts3d[key] / std
 
     (
         inv_metric_tensor,
@@ -121,6 +123,12 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     num_charts = len(x)
 
     if config.plot:
+
+        plot_charts_with_supernodes(
+            loaded_charts3d,
+            np.random.randint(0, len(loaded_charts3d), 64),
+            name=Path(config.figure_path) / "charts_with_supernodes.png",
+        )
 
         plot_domains(
             x,
@@ -181,7 +189,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
             name=Path(config.figure_path) / "combined_3d_with_metric.png",
         )
 
-    # assert False, "Stop here after plotting"
 
     bcs_sampler = iter(
         UniformBCSampler(
@@ -194,7 +201,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                 config.training.batches_path + "bcs_batches.npy",
                 config.training.batches_path + "bcs_values.npy",
             ),
-            load_existing_batches=config.training.load_existing_batches,
+            load_existing_batches=False, # config.training.load_existing_batches,
         )
     )
 
