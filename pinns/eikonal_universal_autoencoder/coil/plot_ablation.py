@@ -1,4 +1,4 @@
-from pinns.eikonal_autodecoder.plot import plot_ablation
+from pinns.eikonal_autodecoder.plot import plot_ablation, plot_metrics_separately
 import pandas as pd
 
 if __name__ == "__main__":
@@ -21,6 +21,12 @@ if __name__ == "__main__":
 
     # Create plots
     plot_ablation(
+        "pinns/eikonal_autodecoder/coil/ablation.csv",
+        "pinns/eikonal_autodecoder/coil/deltapinn_ablation.csv",
+        name="ablation_comparison",
+    )
+
+    plot_metrics_separately(
         "pinns/eikonal_autodecoder/coil/ablation.csv",
         "pinns/eikonal_autodecoder/coil/deltapinn_ablation.csv",
         name="ablation_comparison",

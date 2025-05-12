@@ -662,3 +662,548 @@ def plot_charts_with_supernodes(chart, supernode_idxs, name=None):
     if name is not None:
         plt.savefig(name, dpi=300)
     plt.close()
+
+
+def plot_3d_point_cloud(points, colors=None, labels=None, marker_size=50, view_angles=(30, 45), 
+                        colormap='viridis', alpha=1.0, name=None, figsize=(10, 8), 
+                        colorbar_label=None, point_labels=None, axis_labels=None):
+    """
+    Creates a publication-quality 3D point cloud visualization.
+    
+    Args:
+        points (np.ndarray): Array of shape (n, 3) containing 3D point coordinates.
+        colors (np.ndarray, optional): Array of values to color the points by. Defaults to None.
+        labels (dict, optional): Dictionary mapping category names to boolean masks for points. Defaults to None.
+        marker_size (int or np.ndarray, optional): Size of markers. Can be an array for variable sizes. Defaults to 50.
+        view_angles (tuple, optional): Tuple of (elevation, azimuth) viewing angles. Defaults to (30, 45).
+        colormap (str, optional): Matplotlib colormap name. Defaults to 'viridis'.
+        alpha (float, optional): Transparency of points (0 to 1). Defaults to 1.0.
+        name (str, optional): Base name for saving the plot files. Defaults to None.
+        figsize (tuple, optional): Figure size in inches. Defaults to (10, 8).
+        colorbar_label (str, optional): Label for the colorbar. Defaults to None.
+        point_labels (list, optional): List of text labels for specific points. Defaults to None.
+        axis_labels (list, optional): Custom labels for x, y, z axes. Defaults to None.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"  # Use a serif font for better readability in papers
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12
+    plt.rcParams["ytick.labelsize"] = 12
+    plt.rcParams["legend.fontsize"] = 18
+    
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Main scatter plot
+    if labels is not None:
+        # Plot each category with a different color
+        for label_name, mask in labels.items():
+            ax.scatter(
+                points[mask, 0], points[mask, 1], points[mask, 2],
+                s=marker_size, 
+                label=label_name,
+                alpha=alpha,
+                edgecolor='none'
+            )
+        ax.legend(prop={'size': 18}, markerscale=1.5)
+    elif colors is not None:
+        # Plot with continuous color mapping
+        scatter = ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            c=colors, 
+            cmap=colormap,
+            s=marker_size,
+            alpha=alpha,
+            edgecolor='none'
+        )
+        
+        # Add colorbar with professional styling
+        if np.unique(colors).size > 1:
+            cbar = fig.colorbar(scatter, ax=ax, shrink=0.7, pad=0.1)
+            if colorbar_label:
+                cbar.set_label(colorbar_label, size=18)
+            cbar.ax.tick_params(labelsize=12)
+    else:
+        # Simple scatter plot without color mapping
+        ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            s=marker_size,
+            alpha=alpha,
+            edgecolor='none'
+        )
+    
+    # Add point labels if provided
+    if point_labels is not None:
+        for i, txt in enumerate(point_labels):
+            if txt:  # Only label non-empty strings
+                ax.text(points[i, 0], points[i, 1], points[i, 2], txt, 
+                       size=14, zorder=100, color='black', fontweight='bold')
+    
+    # Set axis labels
+    if axis_labels:
+        ax.set_xlabel(axis_labels[0], labelpad=10)
+        ax.set_ylabel(axis_labels[1], labelpad=10)
+        ax.set_zlabel(axis_labels[2], labelpad=10)
+    else:
+        ax.set_xlabel('X', labelpad=10)
+        ax.set_ylabel('Y', labelpad=10)
+        ax.set_zlabel('Z', labelpad=10)
+    
+    # Professional styling for the plot
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    
+    ax.xaxis.pane.set_edgecolor('w')
+    ax.yaxis.pane.set_edgecolor('w')
+    ax.zaxis.pane.set_edgecolor('w')
+    
+    ax.grid(True, linestyle='--', alpha=0.6, linewidth=0.8)
+    
+    # Set viewing angle
+    ax.view_init(elev=view_angles[0], azim=view_angles[1])
+    
+    # Set equal aspect ratio for all axes
+    # This ensures the 3D visualization isn't stretched
+    ax.set_box_aspect([1, 1, 1])
+    
+    # Adjust tick parameters for better readability
+    ax.tick_params(axis='both', which='major', labelsize=12, width=1.5, length=6, pad=8)
+    
+    # Ensure tight layout
+    plt.tight_layout()
+    
+    # Save high-quality versions if name is provided
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(f"{name}.png", format="png", dpi=600, bbox_inches="tight")
+    
+    plt.show()
+    return fig
+
+
+def plot_3d_point_cloud_single_chart(points, colors=None, marker_size=100, view_angles=(30, 45), 
+                        colormap='viridis', alpha=1.0, name=None, figsize=(10, 8), 
+                        colorbar_label=None, edge_color=None, edge_width=0,
+                        show_axes=True, axes_linewidth=1.5, axes_color='black'):
+    """
+    Creates a minimal, publication-quality 3D point cloud visualization with optional axes.
+    
+    Args:
+        points (np.ndarray): Array of shape (n, 3) containing 3D point coordinates.
+        colors (np.ndarray, optional): Array of values to color the points by. Defaults to None.
+        marker_size (int or np.ndarray, optional): Size of markers. Can be an array for variable sizes. Defaults to 50.
+        view_angles (tuple, optional): Tuple of (elevation, azimuth) viewing angles. Defaults to (30, 45).
+        colormap (str, optional): Matplotlib colormap name. Defaults to 'viridis'.
+        alpha (float, optional): Transparency of points (0 to 1). Defaults to 1.0.
+        name (str, optional): Base name for saving the plot files. Defaults to None.
+        figsize (tuple, optional): Figure size in inches. Defaults to (10, 8).
+        colorbar_label (str, optional): Label for the colorbar. Defaults to None.
+        edge_color (str, optional): Color of point edges. None for no edges. Defaults to None.
+        edge_width (float, optional): Width of point edges. Defaults to 0.
+        show_axes (bool, optional): Whether to show coordinate axes. Defaults to True.
+        axes_linewidth (float, optional): Width of coordinate axes lines. Defaults to 1.5.
+        axes_color (str, optional): Color of coordinate axes. Defaults to 'black'.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"  # Use a serif font for better readability in papers
+    plt.rcParams["font.size"] = 10
+    
+    fig = plt.figure(figsize=figsize)
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Calculate axis limits with a small buffer
+    x_min, x_max = points[:, 0].min(), points[:, 0].max()
+    y_min, y_max = points[:, 1].min(), points[:, 1].max()
+    z_min, z_max = points[:, 2].min(), points[:, 2].max()
+    
+    # Add a small buffer (5% of range) to avoid points at the edges
+    buffer_x = 0.05 * (x_max - x_min)
+    buffer_y = 0.05 * (y_max - y_min)
+    buffer_z = 0.05 * (z_max - z_min)
+    
+    ax.set_xlim(x_min - buffer_x, x_max + buffer_x)
+    ax.set_ylim(y_min - buffer_y, y_max + buffer_y)
+    ax.set_zlim(z_min - buffer_z, z_max + buffer_z)
+    
+    # Remove all default axis elements
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.set_zticklabels([])
+    
+    # Remove background panes and grid
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    ax.xaxis.pane.set_edgecolor('none')
+    ax.yaxis.pane.set_edgecolor('none')
+    ax.zaxis.pane.set_edgecolor('none')
+    ax.grid(False)
+    # Set viewing angle
+    ax.view_init(elev=view_angles[0], azim=view_angles[1])
+    
+
+    # Add minimal coordinate axes if requested
+    if show_axes:
+        # Get the minimum values for each axis to place the coordinate system
+        origin = (x_min - buffer_x/2, y_min - buffer_y/2, z_min - buffer_z/2)
+
+    # Set edge color parameters
+    if edge_color is None:
+        edge_color = 'none'
+    
+    # Main scatter plot
+    if colors is not None:
+        # Plot with continuous color mapping
+        scatter = ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            c=colors, 
+            cmap=colormap,
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width
+        )
+        
+        # Add colorbar with minimal styling if needed
+        if np.unique(colors).size > 1:
+            cbar = fig.colorbar(scatter, ax=ax, shrink=0.7, pad=0.05)
+            if colorbar_label:
+                cbar.set_label(colorbar_label, size=18)
+            cbar.ax.tick_params(labelsize=12)
+    else:
+        # Simple scatter plot without color mapping
+        ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width
+        )
+
+    # Set equal aspect ratio for all axes
+    ax.set_box_aspect([1, 1, 1])
+    
+    # Tight layout with minimal padding
+    plt.tight_layout(pad=0.1)
+    
+    # Save high-quality versions if name is provided
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(f"{name}.png", format="png", dpi=600, bbox_inches="tight")
+    
+    plt.show()
+    return fig
+
+
+def plot_3d_point_cloud_single_chart(points, colors=None, marker_size=50, view_angles=(30, 45), 
+                        colormap='viridis', alpha=0.8, name=None, figsize=(10, 8), 
+                        colorbar_label=None, edge_color='black', edge_width=0.3,
+                        show_axes=True, axes_linewidth=1.5, axes_color='black',
+                        depth_shading=True, elev_range=15, azim_range=45, n_views=None):
+    """
+    Creates a publication-quality 3D point cloud visualization with enhanced depth perception.
+    
+    Args:
+        points (np.ndarray): Array of shape (n, 3) containing 3D point coordinates.
+        colors (np.ndarray, optional): Array of values to color the points by. Defaults to None.
+        marker_size (int or np.ndarray, optional): Size of markers. Can be an array for variable sizes. Defaults to 50.
+        view_angles (tuple, optional): Tuple of (elevation, azimuth) viewing angles. Defaults to (30, 45).
+        colormap (str, optional): Matplotlib colormap name. Defaults to 'viridis'.
+        alpha (float, optional): Transparency of points (0 to 1). Defaults to 0.8.
+        name (str, optional): Base name for saving the plot files. Defaults to None.
+        figsize (tuple, optional): Figure size in inches. Defaults to (10, 8).
+        colorbar_label (str, optional): Label for the colorbar. Defaults to None.
+        edge_color (str, optional): Color of point edges. Defaults to 'black'.
+        edge_width (float, optional): Width of point edges. Defaults to 0.3.
+        show_axes (bool, optional): Whether to show coordinate axes. Defaults to True.
+        axes_linewidth (float, optional): Width of coordinate axes lines. Defaults to 1.5.
+        axes_color (str, optional): Color of coordinate axes. Defaults to 'black'.
+        depth_shading (bool, optional): Whether to apply depth-dependent shading. Defaults to True.
+        elev_range (float, optional): Range of elevation angles for multi-view plots. Defaults to 15.
+        azim_range (float, optional): Range of azimuth angles for multi-view plots. Defaults to 45.
+        n_views (int, optional): Number of views to generate. If None, creates a single view. Defaults to None.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"  # Use a serif font for better readability in papers
+    plt.rcParams["font.size"] = 10
+    
+    # For multi-view plot
+    if n_views is not None and n_views > 1:
+        fig = plt.figure(figsize=(figsize[0] * min(n_views, 3), figsize[1] * ((n_views + 2) // 3)))
+        
+        # Calculate view angles for multiple views
+        base_elev, base_azim = view_angles
+        elevs = np.linspace(base_elev - elev_range/2, base_elev + elev_range/2, n_views)
+        azims = np.linspace(base_azim - azim_range/2, base_azim + azim_range/2, n_views)
+        
+        for i in range(n_views):
+            ax = fig.add_subplot(((n_views + 2) // 3), min(n_views, 3), i+1, projection='3d')
+            _create_3d_plot(ax, points, colors, marker_size, (elevs[i], azims[i]), 
+                           colormap, alpha, colorbar_label, edge_color, edge_width,
+                           show_axes, axes_linewidth, axes_color, depth_shading)
+            
+        plt.tight_layout()
+        
+    else:  # Single view plot
+        fig = plt.figure(figsize=figsize)
+        ax = fig.add_subplot(111, projection='3d')
+        _create_3d_plot(ax, points, colors, marker_size, view_angles, 
+                       colormap, alpha, colorbar_label, edge_color, edge_width,
+                       show_axes, axes_linewidth, axes_color, depth_shading)
+    
+    # Save high-quality versions if name is provided
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(f"{name}.png", format="png", dpi=600, bbox_inches="tight")
+    
+    plt.show()
+    return fig
+
+
+def _create_3d_plot(ax, points, colors, marker_size, view_angles, colormap, alpha, 
+                   colorbar_label, edge_color, edge_width, show_axes, 
+                   axes_linewidth, axes_color, depth_shading):
+    """Helper function to create a 3D plot with enhanced depth perception."""
+    
+    # Calculate axis limits with a small buffer
+    x_min, x_max = points[:, 0].min(), points[:, 0].max()
+    y_min, y_max = points[:, 1].min(), points[:, 1].max()
+    z_min, z_max = points[:, 2].min(), points[:, 2].max()
+    
+    # Add a small buffer (5% of range) to avoid points at the edges
+    buffer_x = 0.05 * (x_max - x_min)
+    buffer_y = 0.05 * (y_max - y_min)
+    buffer_z = 0.05 * (z_max - z_min)
+    
+    # Apply depth-dependent shading if requested
+    if depth_shading and colors is None:
+        # Calculate depth values based on the view angle
+        elev, azim = view_angles
+        elev_rad = np.radians(elev)
+        azim_rad = np.radians(azim)
+        
+        # Direction vector from viewer to origin
+        view_dir = np.array([
+            -np.cos(elev_rad) * np.sin(azim_rad),
+            -np.cos(elev_rad) * np.cos(azim_rad),
+            -np.sin(elev_rad)
+        ])
+        
+        # Project points onto viewing direction to get depth
+        depths = np.dot(points, view_dir)
+        
+        # Normalize depths to [0, 1] for coloring
+        depth_min, depth_max = depths.min(), depths.max()
+        norm_depths = (depths - depth_min) / (depth_max - depth_min) if depth_max > depth_min else np.zeros_like(depths)
+        
+        # Use depth for coloring
+        colors = norm_depths
+        colormap = 'Blues_r'  # Reversed blues colormap works well for depth
+    
+    # Main scatter plot with edge highlighting for better 3D appearance
+    if colors is not None:
+        scatter = ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            c=colors, 
+            cmap=colormap,
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width,
+            depthshade=True  # Enable matplotlib's built-in depth shading
+        )
+        
+        # Add colorbar with minimal styling if needed
+        if np.unique(colors).size > 1:
+            cbar = plt.colorbar(scatter, ax=ax, shrink=0.7, pad=0.05)
+            if colorbar_label:
+                cbar.set_label(colorbar_label, size=14)
+            cbar.ax.tick_params(labelsize=10)
+    else:
+        # Simple scatter plot without color mapping
+        ax.scatter(
+            points[:, 0], points[:, 1], points[:, 2],
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width,
+            depthshade=True  # Enable matplotlib's built-in depth shading
+        )
+    
+    # Remove all default axis elements
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
+    ax.set_xticklabels([])
+    ax.set_yticklabels([])
+    ax.set_zticklabels([])
+    
+    # Add subtle edge to the 3D box for better depth perception
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    ax.xaxis.pane.set_edgecolor('lightgray')
+    ax.yaxis.pane.set_edgecolor('lightgray')
+    ax.zaxis.pane.set_edgecolor('lightgray')
+    ax.xaxis.pane.set_alpha(0.1)
+    ax.yaxis.pane.set_alpha(0.1)
+    ax.zaxis.pane.set_alpha(0.1)
+    
+    # Add minimal coordinate axes if requested
+    if show_axes:
+        # Get the minimum values for each axis to place the coordinate system
+        origin = (x_min - buffer_x/2, y_min - buffer_y/2, z_min - buffer_z/2)
+        
+        # Calculate axis lengths (20% of the respective dimension)
+        x_length = 0.2 * (x_max - x_min)
+        y_length = 0.2 * (y_max - y_min)
+        z_length = 0.2 * (z_max - z_min)
+        
+        # Draw x-axis
+        ax.plot([origin[0], origin[0] + x_length], 
+                [origin[1], origin[1]], 
+                [origin[2], origin[2]], 
+                color=axes_color, linewidth=axes_linewidth)
+        
+        # Draw y-axis
+        ax.plot([origin[0], origin[0]], 
+                [origin[1], origin[1] + y_length], 
+                [origin[2], origin[2]], 
+                color=axes_color, linewidth=axes_linewidth)
+        
+        # Draw z-axis
+        ax.plot([origin[0], origin[0]], 
+                [origin[1], origin[1]], 
+                [origin[2], origin[2] + z_length], 
+                color=axes_color, linewidth=axes_linewidth)
+    
+    # Set viewing angle
+    ax.view_init(elev=view_angles[0], azim=view_angles[1])
+    
+    # Set equal aspect ratio for all axes
+    ax.set_box_aspect([1, 1, 1])
+    
+    # Set axis limits
+    ax.set_xlim(x_min - buffer_x, x_max + buffer_x)
+    ax.set_ylim(y_min - buffer_y, y_max + buffer_y)
+    ax.set_zlim(z_min - buffer_z, z_max + buffer_z)
+
+
+def plot_2d_scatter(x, y, marker_size=50, colormap='viridis', alpha=0.8, 
+                   name=None, figsize=(8, 6), colorbar_label=None, edge_color='black', 
+                   edge_width=0.3, show_grid=True, grid_alpha=0.2, show_axes=True,
+                   axes_linewidth=1.5, axes_color='black', x_label=None, y_label=None):
+    """
+    Creates a publication-quality 2D scatter plot with transparent background grid.
+    
+    Args:
+        points (np.ndarray): Array of shape (n, 2) containing 2D point coordinates.
+        colors (np.ndarray, optional): Array of values to color the points by. Defaults to None.
+        marker_size (int or np.ndarray, optional): Size of markers. Can be an array for variable sizes. Defaults to 50.
+        colormap (str, optional): Matplotlib colormap name. Defaults to 'viridis'.
+        alpha (float, optional): Transparency of points (0 to 1). Defaults to 0.8.
+        name (str, optional): Base name for saving the plot files. Defaults to None.
+        figsize (tuple, optional): Figure size in inches. Defaults to (8, 6).
+        colorbar_label (str, optional): Label for the colorbar. Defaults to None.
+        edge_color (str, optional): Color of point edges. Defaults to 'black'.
+        edge_width (float, optional): Width of point edges. Defaults to 0.3.
+        show_grid (bool, optional): Whether to show the background grid. Defaults to True.
+        grid_alpha (float, optional): Transparency of the grid. Defaults to 0.2.
+        show_axes (bool, optional): Whether to show axes. Defaults to True.
+        axes_linewidth (float, optional): Width of axes lines. Defaults to 1.5.
+        axes_color (str, optional): Color of axes. Defaults to 'black'.
+        x_label (str, optional): Label for x-axis. Defaults to None.
+        y_label (str, optional): Label for y-axis. Defaults to None.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"  # Use a serif font for better readability in papers
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12
+    plt.rcParams["ytick.labelsize"] = 12
+    
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Calculate axis limits with a small buffer
+    x_min, x_max = x.min(), x.max()
+    y_min, y_max = y.min(), y.max()
+    
+    # Add a small buffer (5% of range) to avoid points at the edges
+    buffer_x = 0.05 * (x_max - x_min)
+    buffer_y = 0.05 * (y_max - y_min)
+    
+    # Set axis limits
+    ax.set_xlim(x_min - buffer_x, x_max + buffer_x)
+    ax.set_ylim(y_min - buffer_y, y_max + buffer_y)
+    
+
+    scatter = ax.scatter(
+        x, y,
+        s=marker_size,
+        alpha=alpha,
+        edgecolor=edge_color,
+        linewidth=edge_width,
+        c='b'
+    )
+    
+    # Set axis styling
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_linewidth(axes_linewidth)
+    ax.spines['left'].set_linewidth(axes_linewidth)
+    ax.spines['bottom'].set_color(axes_color)
+    ax.spines['left'].set_color(axes_color)
+    
+    # Set tick parameters
+    ax.tick_params(axis='both', which='major', width=1.5, length=6, pad=8, 
+                    bottom=True, left=True, top=False, right=False)
+    
+    # Set axis labels if provided
+    if x_label:
+        ax.set_xlabel(x_label, labelpad=10)
+    if y_label:
+        ax.set_ylabel(y_label, labelpad=10)
+    
+    # Configure grid
+    if show_grid:
+        ax.grid(True, linestyle='--', alpha=grid_alpha, linewidth=0.8)
+    else:
+        ax.grid(False)
+    
+    # Set aspect ratio to be equal
+    ax.set_aspect('equal', adjustable='box')
+    
+    # Ensure tight layout
+    plt.tight_layout()
+    
+    # Save high-quality versions if name is provided
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(f"{name}.png", format="png", dpi=600, bbox_inches="tight")
+    
+    plt.show()
+    return fig

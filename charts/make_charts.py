@@ -11,6 +11,7 @@ from chart_autoencoder import (
     get_charts,
     find_verts_in_charts,
     plot_3d_points,
+    plot_3d_chart,
 )
 from chart_autoencoder import (
     get_umap_embeddings,
@@ -61,6 +62,10 @@ def main(_):
 
     logging.info(f"Got {len(charts)} charts. Saved charts to {cfg.dataset.charts_path}")
 
+    plot_3d_chart(
+        chart=charts[0],
+        name=Path(cfg.figure_path) / f"{cfg.dataset.name}_chart_0.png",
+    )
     plot_html_3d_charts(
         charts=charts,
         sampled_points=sampled_points,
@@ -76,20 +81,19 @@ def main(_):
         name=Path(cfg.figure_path) / f"{cfg.dataset.name}_charts.png",
     )
 
-    distance_matrix = compute_distance_matrix(charts, cfg.charts.nearest_neighbors)
-    np.save(cfg.dataset.distance_matrix_path, distance_matrix, allow_pickle=True)
-    logging.info(f"Saved distance matrix to {cfg.dataset.distance_matrix_path}")
+    # distance_matrix = compute_distance_matrix(charts, cfg.charts.nearest_neighbors)
+    # np.save(cfg.dataset.distance_matrix_path, distance_matrix, allow_pickle=True)
+    # logging.info(f"Saved distance matrix to {cfg.dataset.distance_matrix_path}")
 
-    umap_charts = get_umap_embeddings(charts, cfg)
-    np.save(cfg.umap.umap_embeddings_path, umap_charts, allow_pickle=True)
-    logging.info(f"Saved umap embeddings to {cfg.umap.umap_embeddings_path}")
+    # umap_charts = get_umap_embeddings(charts, cfg)
+    # np.save(cfg.umap.umap_embeddings_path, umap_charts, allow_pickle=True)
+    # logging.info(f"Saved umap embeddings to {cfg.umap.umap_embeddings_path}")
 
-    plot_local_charts_2d(
-        charts=umap_charts,
-        boundaries_indices=boundary_indices,
-        name=Path(cfg.figure_path) / f"post_{cfg.dataset.name}_umap_charts.png",
-    )
-
+    # plot_local_charts_2d(
+    #     charts=umap_charts,
+    #     boundaries_indices=boundary_indices,
+    #     name=Path(cfg.figure_path) / f"post_{cfg.dataset.name}_umap_charts.png",
+    # )
 
 def load_cfgs(
     _TASK_FILE,

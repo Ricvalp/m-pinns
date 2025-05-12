@@ -365,3 +365,133 @@ def plot_html_3d_mesh(vertices, faces, name=None, colors=None, colorscale="Virid
     if name is not None:
         fig.write_html(name)
     return fig
+
+
+def plot_3d_charts(charts, gt_charts=None, name=None):
+    fig = plt.figure(figsize=(10, 10))
+    ax = fig.add_subplot(111, projection="3d")
+
+    cmap = plt.get_cmap("viridis", len(charts))
+    colors = [cmap(j / len(charts)) for j in range(len(charts))]
+
+    for key, color in zip(charts.keys(), colors):
+        ax.scatter(
+            charts[key][:, 0],
+            charts[key][:, 1],
+            charts[key][:, 2],
+            color=color,
+        )
+
+    if gt_charts is not None:
+        for key in gt_charts.keys():
+            ax.scatter(
+                gt_charts[key][:, 0],
+                gt_charts[key][:, 1],
+                gt_charts[key][:, 2],
+                color="red",
+            )
+
+    ax.set_box_aspect([1, 1, 1])
+
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_zlabel("z")
+
+    if name is not None:
+        plt.savefig(name)
+    plt.show()
+
+
+
+###############################################
+###############################################
+############## Publication plots ##############
+###############################################
+###############################################
+
+
+
+
+def plot_3d_chart(chart, name=None, figsize=(10, 8), dpi=300, 
+                   marker_size=100, alpha=0.7, tick_size=12):
+    """
+    Create a publication-ready 3D scatter plot of chart points without axis labels.
+    
+    Parameters:
+    -----------
+    chart : array
+        Array of 3D points to plot
+    name : str, optional
+        Path to save the figure
+    figsize : tuple, optional
+        Figure size in inches (width, height)
+    dpi : int, optional
+        Resolution for saved figure
+    marker_size : int, optional
+        Size of scatter points
+    alpha : float, optional
+        Transparency of points (0-1)
+    legend : bool, optional
+        Whether to show legend
+    palette : str, optional
+        Seaborn color palette name
+    """
+    import seaborn as sns
+    
+    chart = (chart - chart.mean(axis=0)) / chart.std()
+
+
+    # Set the seaborn style for publication quality
+    sns.set_theme(style="whitegrid", context="paper")
+    
+    # Create figure with tight layout
+    fig = plt.figure(figsize=figsize, dpi=dpi, constrained_layout=True)
+    ax = fig.add_subplot(111, projection="3d")
+
+    ax.scatter(
+        chart[:, 0],
+        chart[:, 1],
+        chart[:, 2],
+        color='b',
+        s=marker_size,
+        alpha=alpha,
+        edgecolor='w',
+        linewidth=0.5,
+    )
+
+    # Set equal aspect ratio for all axes
+    ax.set_box_aspect([1, 1, 1])
+    
+    # Remove axis labels
+    ax.set_xlabel("")
+    ax.set_ylabel("")
+    ax.set_zlabel("")
+    
+    # Reduce number of ticks on each axis
+    ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+    ax.yaxis.set_major_locator(plt.MaxNLocator(5))
+    ax.zaxis.set_major_locator(plt.MaxNLocator(5))
+    
+    # Increase tick label size
+    ax.tick_params(axis='both', which='major', labelsize=tick_size, pad=6)
+    
+    # Add grid for better readability but make it less prominent
+    ax.grid(True, linestyle='--', alpha=0.4)
+
+    # Remove background panes to reduce visual clutter
+    ax.xaxis.pane.fill = False
+    ax.yaxis.pane.fill = False
+    ax.zaxis.pane.fill = False
+    
+    # Make pane edges less prominent
+    ax.xaxis.pane.set_edgecolor('lightgrey')
+    ax.yaxis.pane.set_edgecolor('lightgrey')
+    ax.zaxis.pane.set_edgecolor('lightgrey')
+        
+    # Save the figure if a name is provided
+    if name is not None:
+        plt.savefig(name, bbox_inches='tight', dpi=dpi)
+    
+    plt.show()
+
+

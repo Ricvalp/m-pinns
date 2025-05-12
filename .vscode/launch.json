@@ -18,17 +18,16 @@
             },
         },
         {
-            "name": "make charts autodecoder coil",
+            "name": "make deformed charts coil",
             "type": "debugpy",
             "request": "launch",
             "program": "${workspaceFolder}/charts/make_charts.py",
             "args": [
-                "--config=charts/config/make_charts_coil.py",
+                "--config=charts/config/make_charts_deformed_coil.py",
             ],
             "env": {
                 "PYTHONPATH": "${workspaceFolder}",
                 "NETWORKX_AUTOMATIC_BACKENDS": "networkx",
-                "JAX_DISABLE_JIT": "False",
             },
         },
         {

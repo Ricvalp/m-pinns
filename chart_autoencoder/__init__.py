@@ -10,6 +10,7 @@ from chart_autoencoder.plot import (
     plot_html_3d_point_cloud,
     plot_html_3d_charts,
     plot_html_3d_boundaries,
+    plot_3d_chart,
 )
 from chart_autoencoder.utils import (
     ChartSampler,

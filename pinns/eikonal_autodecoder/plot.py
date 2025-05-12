@@ -397,7 +397,7 @@ def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_va
     return fig
 
 
-def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
+def plot_ablation(mpinn_csv, deltapinn_csv, log_scale=True, name=None):
     """
     Plots ablation study results from both MPINN and DeltaPINN CSV files, averaging over seeds.
 
@@ -500,6 +500,8 @@ def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
     for ax in [ax1, ax2]:
         ax.tick_params(axis="both", which="major", labelsize=18, width=1.5, length=6)
         ax.legend(prop={"size": 18})
+    if log_scale:
+        ax2.set_yscale("log")
 
     plt.tight_layout()
 
@@ -509,3 +511,311 @@ def plot_ablation(mpinn_csv, deltapinn_csv, name=None):
 
     plt.show()
     return fig
+
+
+def plot_2d_scatter(points, colors=None, marker_size=50, colormap='viridis', alpha=0.8, 
+                   name=None, figsize=(8, 6), colorbar_label=None, edge_color='black', 
+                   edge_width=0.3, show_grid=True, grid_alpha=0.2, show_axes=True,
+                   axes_linewidth=1.5, axes_color='black', x_label=None, y_label=None):
+    """
+    Creates a publication-quality 2D scatter plot with transparent background grid.
+    
+    Args:
+        points (np.ndarray): Array of shape (n, 2) containing 2D point coordinates.
+        colors (np.ndarray, optional): Array of values to color the points by. Defaults to None.
+        marker_size (int or np.ndarray, optional): Size of markers. Can be an array for variable sizes. Defaults to 50.
+        colormap (str, optional): Matplotlib colormap name. Defaults to 'viridis'.
+        alpha (float, optional): Transparency of points (0 to 1). Defaults to 0.8.
+        name (str, optional): Base name for saving the plot files. Defaults to None.
+        figsize (tuple, optional): Figure size in inches. Defaults to (8, 6).
+        colorbar_label (str, optional): Label for the colorbar. Defaults to None.
+        edge_color (str, optional): Color of point edges. Defaults to 'black'.
+        edge_width (float, optional): Width of point edges. Defaults to 0.3.
+        show_grid (bool, optional): Whether to show the background grid. Defaults to True.
+        grid_alpha (float, optional): Transparency of the grid. Defaults to 0.2.
+        show_axes (bool, optional): Whether to show axes. Defaults to True.
+        axes_linewidth (float, optional): Width of axes lines. Defaults to 1.5.
+        axes_color (str, optional): Color of axes. Defaults to 'black'.
+        x_label (str, optional): Label for x-axis. Defaults to None.
+        y_label (str, optional): Label for y-axis. Defaults to None.
+    
+    Returns:
+        matplotlib.figure.Figure: The generated matplotlib figure.
+    """
+    # Set a professional style using seaborn
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"  # Use a serif font for better readability in papers
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12
+    plt.rcParams["ytick.labelsize"] = 12
+    
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=figsize)
+    
+    # Calculate axis limits with a small buffer
+    x_min, x_max = points[:, 0].min(), points[:, 0].max()
+    y_min, y_max = points[:, 1].min(), points[:, 1].max()
+    
+    # Add a small buffer (5% of range) to avoid points at the edges
+    buffer_x = 0.05 * (x_max - x_min)
+    buffer_y = 0.05 * (y_max - y_min)
+    
+    # Set axis limits
+    ax.set_xlim(x_min - buffer_x, x_max + buffer_x)
+    ax.set_ylim(y_min - buffer_y, y_max + buffer_y)
+    
+    # Main scatter plot
+    if colors is not None:
+        scatter = ax.scatter(
+            points[:, 0], points[:, 1],
+            c=colors, 
+            cmap=colormap,
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width
+        )
+        
+        # Add colorbar with professional styling
+        if np.unique(colors).size > 1:
+            cbar = fig.colorbar(scatter, ax=ax, shrink=0.8, pad=0.05)
+            if colorbar_label:
+                cbar.set_label(colorbar_label, size=18)
+            cbar.ax.tick_params(labelsize=12)
+    else:
+        scatter = ax.scatter(
+            points[:, 0], points[:, 1],
+            s=marker_size,
+            alpha=alpha,
+            edgecolor=edge_color,
+            linewidth=edge_width
+        )
+    
+    # Configure axes
+    if show_axes:
+        # Set axis styling
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_linewidth(axes_linewidth)
+        ax.spines['left'].set_linewidth(axes_linewidth)
+        ax.spines['bottom'].set_color(axes_color)
+        ax.spines['left'].set_color(axes_color)
+        
+        # Set tick parameters
+        ax.tick_params(axis='both', which='major', width=1.5, length=6, pad=8, 
+                      bottom=True, left=True, top=False, right=False)
+        
+        # Set axis labels if provided
+        if x_label:
+            ax.set_xlabel(x_label, labelpad=10)
+        if y_label:
+            ax.set_ylabel(y_label, labelpad=10)
+    else:
+        # Hide all spines and ticks if axes are not shown
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+    
+    # Configure grid
+    if show_grid:
+        ax.grid(True, linestyle='--', alpha=grid_alpha, linewidth=0.8)
+    else:
+        ax.grid(False)
+    
+    # Set aspect ratio to be equal
+    ax.set_aspect('equal', adjustable='box')
+    
+    # Ensure tight layout
+    plt.tight_layout()
+    
+    # Save high-quality versions if name is provided
+    if name is not None:
+        plt.savefig(f"{name}.pdf", format="pdf", bbox_inches="tight", dpi=300)
+        plt.savefig(f"{name}.png", format="png", dpi=600, bbox_inches="tight")
+    
+    plt.show()
+    return fig
+
+
+def plot_metrics_separately(correlation_data, mse_data, log_scale=True, name=None):
+    """
+    Creates separate publication-ready plots for correlation and MSE metrics.
+    
+    Parameters:
+    -----------
+    correlation_data : dict or str
+        Either a dictionary with keys as method names and values as tuples of (x_values, y_means, y_stds)
+        for correlation metrics, or a path to a CSV file containing correlation data
+    mse_data : dict or str
+        Either a dictionary with keys as method names and values as tuples of (x_values, y_means, y_stds)
+        for MSE metrics, or a path to a CSV file containing MSE data
+    log_scale : bool, optional
+        Whether to use log scale for MSE plot (default: True)
+    name : str, optional
+        Base name for saving the plots (will append _correlation.pdf and _mse.pdf)
+    """
+    import seaborn as sns
+    import pandas as pd
+    
+    # Set style consistent with publication quality
+    sns.set_theme(style="ticks")
+    plt.rcParams["font.family"] = "serif"
+    plt.rcParams["font.size"] = 10
+    plt.rcParams["axes.labelsize"] = 18
+    plt.rcParams["axes.titlesize"] = 14
+    plt.rcParams["xtick.labelsize"] = 12
+    plt.rcParams["ytick.labelsize"] = 12
+    plt.rcParams["legend.fontsize"] = 18
+    
+    # Process input data
+    corr_data_dict = {}
+    mse_data_dict = {}
+    
+    # Handle correlation data
+    if isinstance(correlation_data, str):
+        # It's a CSV file path
+        df = pd.read_csv(correlation_data)
+        
+        # Check if it's in the format from the original plot_ablation function
+        if 'N' in df.columns:
+            # Extract method names from column names
+            method_names = []
+            for col in df.columns:
+                if 'corr' in col and not col.endswith(('mean', 'std')):
+                    method_name = col.split('_')[0]
+                    if method_name == "mpinn":
+                        method_name = r"$\mathcal{M}$-PINN"
+                    elif method_name == "deltapinn":
+                        method_name = r"$\Delta$-PINN"
+                    method_names.append((method_name, col))
+            
+            # Group by N and calculate mean and std for each method
+            grouped = df.groupby('N')
+            
+            for method_name, col in method_names:
+                x_values = grouped['N'].first().values
+                y_means = grouped[col].mean().values
+                y_stds = grouped[col].std().values
+                corr_data_dict[method_name] = (x_values, y_means, y_stds)
+        else:
+            # Assume it's already in the right format with columns: method, N, mean, std
+            for method in df['method'].unique():
+                method_df = df[df['method'] == method]
+                corr_data_dict[method] = (method_df['N'].values, method_df['mean'].values, method_df['std'].values)
+    else:
+        # It's already a dictionary
+        corr_data_dict = correlation_data
+    
+    # Handle MSE data
+    if isinstance(mse_data, str):
+        # It's a CSV file path
+        df = pd.read_csv(mse_data)
+        
+        # Check if it's in the format from the original plot_ablation function
+        if 'N' in df.columns:
+            # Extract method names from column names
+            method_names = []
+            for col in df.columns:
+                if 'mse' in col and not col.endswith(('mean', 'std')):
+                    method_name = col.split('_')[0]
+                    if method_name == "mpinn":
+                        method_name = r"$\mathcal{M}$-PINN"
+                    elif method_name == "deltapinn":
+                        method_name = r"$\Delta$-PINN"
+                    method_names.append((method_name, col))
+            
+            # Group by N and calculate mean and std for each method
+            grouped = df.groupby('N')
+            
+            for method_name, col in method_names:
+                x_values = grouped['N'].first().values
+                y_means = grouped[col].mean().values
+                y_stds = grouped[col].std().values
+                mse_data_dict[method_name] = (x_values, y_means, y_stds)
+        else:
+            # Assume it's already in the right format with columns: method, N, mean, std
+            for method in df['method'].unique():
+                method_df = df[df['method'] == method]
+                mse_data_dict[method] = (method_df['N'].values, method_df['mean'].values, method_df['std'].values)
+    else:
+        # It's already a dictionary
+        mse_data_dict = mse_data
+    
+    # Define colors for different methods
+    colors = ['blue', 'red', 'green', 'orange', 'purple']
+    
+    # Plot correlation
+    fig1, ax1 = plt.subplots(figsize=(6, 5))
+    
+    for i, (method_name, (x_values, y_means, y_stds)) in enumerate(corr_data_dict.items()):
+        ax1.errorbar(
+            x_values,
+            y_means,
+            yerr=y_stds,
+            marker="o",
+            markersize=8,
+            capsize=5,
+            capthick=2,
+            linewidth=2,
+            color=colors[i % len(colors)],
+            label=method_name,
+        )
+    
+    ax1.set_xlabel("number of train points")
+    ax1.set_ylabel("correlation")
+    ax1.grid(True, linestyle="--", alpha=0.6, linewidth=1.2)
+    ax1.tick_params(axis="both", which="major", labelsize=18, width=1.5, length=6)
+    ax1.legend(prop={"size": 18})
+    
+    plt.tight_layout()
+    
+    if name is not None:
+        plt.savefig(f"{name}_correlation.pdf", format="pdf", bbox_inches="tight")
+        plt.savefig(f"{name}_correlation.png", format="png", dpi=300, bbox_inches="tight")
+    
+    # Plot MSE
+    fig2, ax2 = plt.subplots(figsize=(6, 5))
+    
+    for i, (method_name, (x_values, y_means, y_stds)) in enumerate(mse_data_dict.items()):
+        ax2.errorbar(
+            x_values,
+            y_means,
+            yerr=y_stds,
+            marker="o",
+            markersize=8,
+            capsize=5,
+            capthick=2,
+            linewidth=2,
+            color=colors[i % len(colors)],
+            label=method_name,
+        )
+    
+    ax2.set_xlabel("number of train points")
+    ax2.set_ylabel("MSE")
+    ax2.grid(True, linestyle="--", alpha=0.6, linewidth=1.2)
+    ax2.tick_params(axis="both", which="major", labelsize=18, width=1.5, length=6)
+    ax2.legend(prop={"size": 18})
+    
+    if log_scale:
+        ax2.set_yscale("log")
+    
+    plt.tight_layout()
+    
+    if name is not None:
+        plt.savefig(f"{name}_mse.pdf", format="pdf", bbox_inches="tight")
+        plt.savefig(f"{name}_mse.png", format="png", dpi=300, bbox_inches="tight")
+    
+    plt.show()
+    
+    return fig1, fig2
+
+
+
+
+
+

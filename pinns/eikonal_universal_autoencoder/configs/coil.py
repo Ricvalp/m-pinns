@@ -17,7 +17,7 @@ def get_config():
     config.num_supernodes = 64
 
     config.dataset = ml_collections.ConfigDict()
-    config.dataset.charts_path = "./datasets/coil/charts"
+    config.dataset.charts_path = "./datasets/coil/charts/t010/"
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()

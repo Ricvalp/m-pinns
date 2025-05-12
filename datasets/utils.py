@@ -442,6 +442,16 @@ def get_dataset(cfg_dataset: Dict[str, Any]) -> data.Dataset:
             subset_cardinality=cfg_dataset.subset_cardinality,
             seed=cfg_dataset.seed,
         )
+    
+    elif cfg_dataset.name == "DeformedCoil":
+        logging.info(f"Dataset: {cfg_dataset.name}")
+        source_dataset = getattr(datasets, cfg_dataset.name)
+        dataset = source_dataset(
+            scale=cfg_dataset.scale,
+            t=cfg_dataset.t,
+            path=cfg_dataset.path,
+            points_per_unit_area=cfg_dataset.points_per_unit_area,
+        )
 
     elif cfg_dataset.name == "Propeller":
         logging.info(f"Dataset: {cfg_dataset.name}")
