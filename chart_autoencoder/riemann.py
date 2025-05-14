@@ -214,10 +214,12 @@ def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg,
     decoder = ModulatedSIREN(cfg=autoencoder_cfg)
     model_apply_fn = model.apply
 
+    coords = jnp.array(coords)[None, :, :]
 
-
-    init_points, supernode_idxs = coords[None, :, :], jax.random.randint(jax.random.PRNGKey(0), (16, autoencoder_cfg.dataset.num_supernodes), 0, 128)
-    params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs)["params"]
+    init_points = jnp.zeros((1, coords.shape[1], 3)) 
+    supernode_idxs = jax.random.randint(jax.random.PRNGKey(0), (1, autoencoder_cfg.dataset.num_supernodes), 0, 128)
+    
+    params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs, coords)["params"]
     optimizer = optax.adam(learning_rate=0.1)
     terget = train_state.TrainState.create(
         apply_fn=model.apply, params=params, tx=optimizer

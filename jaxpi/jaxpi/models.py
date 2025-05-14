@@ -6,7 +6,8 @@ from flax.training import train_state
 from flax import jax_utils
 
 import jax.numpy as jnp
-from jax import lax, jit, grad, random, tree_map, jacfwd, jacrev, value_and_grad
+from jax import lax, jit, grad, random, jacfwd, jacrev, value_and_grad
+
 from jax.tree_util import tree_map, tree_reduce, tree_leaves
 
 from flax import struct

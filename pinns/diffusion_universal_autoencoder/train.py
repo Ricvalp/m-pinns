@@ -46,7 +46,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     run = wandb.init(
         project=wandb_config.project,
         name=wandb_config.name,
-        entity=wandb_config.entity,
+        entity="ricvalp",
         config=config,
     )
 
@@ -61,25 +61,28 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     with open(checkpoint_dir + "/cfg.json", "w") as f:
         json.dump(config.to_dict(), f, indent=4)
 
-    X = jnp.linspace(0, 1, 50)
-    Y = jnp.linspace(0, 1, 50)
-    XX, YY = jnp.meshgrid(X, Y)
-    coords = jnp.zeros((XX.size, 3))
+    X = np.linspace(0, 1, 50)
+    Y = np.linspace(0, 1, 50)
+    XX, YY = np.meshgrid(X, Y)
+    coords = np.zeros((XX.size, 3))
     coords[:, 0] = XX.flatten()
     coords[:, 1] = YY.flatten()
 
-    boundaries_x = jnp.zeros((XX.size, 3))
+    boundaries_x = np.zeros((XX.size, 3))
     boundaries_x[:, 0] = XX.flatten()
     boundaries_x[:, 1] = YY.flatten()
 
-    boundaries_y = jnp.zeros((XX.size, 3))
+    boundaries_y = np.zeros((XX.size, 3))
     boundaries_y[:, 0] = XX.flatten()
     boundaries_y[:, 1] = YY.flatten()
     
     charts3d = []
-    ts = np.linspace(0.0, 0.8, 1000)
+    ts = np.linspace(0.0, 0.8, 20)
     for t in ts:
         charts3d.append(get_deformed_points(coords, t))
+
+    # plot_charts_sequence(charts3d, ts, name=Path(config.figure_path) / "charts_sequence.png")
+    
 
     (
         inv_metric_tensor,
@@ -102,42 +105,42 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     u0 = initial_conditions_spike(x, y)
 
 
-    if config.plot:
+    # if config.plot:
 
-        plot_domains(
-            x,
-            y,
-            boundaries_x,
-            boundaries_y,
-            ics=u0,
-            name=Path(config.figure_path) / "domains.png",
-        )
+    #     plot_domains(
+    #         x,
+    #         y,
+    #         boundaries_x,
+    #         boundaries_y,
+    #         ics=u0,
+    #         name=Path(config.figure_path) / "domains.png",
+    #     )
 
-        plot_domains_3d(
-            x,
-            y,
-            ics=u0,
-            decoder=decoder,
-            d_params=d_params,
-            name=Path(config.figure_path) / "domains_3d.png",
-        )
+    #     plot_domains_3d(
+    #         x,
+    #         y,
+    #         ics=u0,
+    #         decoder=decoder,
+    #         d_params=d_params,
+    #         name=Path(config.figure_path) / "domains_3d.png",
+    #     )
 
-        plot_domains_with_metric(
-            x,
-            y,
-            sqrt_det_g,
-            d_params=d_params,
-            name=Path(config.figure_path) / "domains_with_metric.png",
-        )
+    #     plot_domains_with_metric(
+    #         x,
+    #         y,
+    #         sqrt_det_g,
+    #         d_params=d_params,
+    #         name=Path(config.figure_path) / "domains_with_metric.png",
+    #     )
 
-        plot_combined_3d_with_metric(
-            x,
-            y,
-            decoder=decoder,
-            sqrt_det_g=sqrt_det_g,
-            d_params=d_params,
-            name=Path(config.figure_path) / "combined_3d_with_metric.png",
-        )
+    #     plot_combined_3d_with_metric(
+    #         x,
+    #         y,
+    #         decoder=decoder,
+    #         sqrt_det_g=sqrt_det_g,
+    #         d_params=d_params,
+    #         name=Path(config.figure_path) / "combined_3d_with_metric.png",
+    #     )
 
 
     ics_sampler = iter(
@@ -218,7 +221,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
 
 
-def get_deformed_points(self, grid, t):
+def get_deformed_points(grid, t):
     """
     Apply a smooth deformation in the z-direction to the chart points.
     
@@ -245,9 +248,37 @@ def get_deformed_points(self, grid, t):
     deformation_z = np.zeros_like(x)
     for i in range(len(freq_x)):
         # Each term is zero when x=0, x=1, y=0, or y=1
-        deformation_z += t[i] * np.sin(freq_x[i] * np.pi * x) * np.sin(freq_y[i] * np.pi * y)
+        deformation_z += t * np.sin(freq_x[i] * np.pi * x) * np.sin(freq_y[i] * np.pi * y)
     
     # Apply the deformation to z coordinate
     points[:, 2] = deformation_z
     
     return points
+
+def plot_charts_sequence(charts, ts, name=None):
+    num_charts = len(charts)
+    cols = min(5, num_charts)
+    rows = (num_charts + cols - 1) // cols
+    
+    fig = plt.figure(figsize=(5 * cols, 5 * rows))
+    
+    for i, chart in enumerate(charts):
+        ax = fig.add_subplot(rows, cols, i + 1, projection="3d")
+        ax.set_title(f"t={ts[i]:.2f}")
+        ax.scatter(
+            chart[:, 0],
+            chart[:, 1],
+            chart[:, 2],
+            s=3
+        )
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_zlabel("Z")
+        ax.set_zlim(-1, 1)
+    
+    plt.tight_layout()
+    
+    if name is not None:
+        plt.savefig(name)
+    plt.show()
+    plt.close()
