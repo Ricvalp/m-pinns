@@ -189,3 +189,94 @@ class EncoderSupernodes(nn.Module):
         latent_code = tokens_with_latent[:, 0]
 
         return coords_2d, latent_code
+
+
+
+class EncoderSupernodesGrid(nn.Module):
+    cfg: ConfigDict
+
+    def setup(self):
+
+        encoder_supernodes_cfg = self.cfg.encoder_supernodes_cfg
+
+        # Supernode pooling with fixed max_supernodes
+        self.supernode_pooling = SupernodePooling(
+            max_degree=encoder_supernodes_cfg.max_degree,
+            input_dim=encoder_supernodes_cfg.input_dim,
+            hidden_dim=encoder_supernodes_cfg.gnn_dim,
+            ndim=encoder_supernodes_cfg.ndim,
+        )
+
+        # Encoder projection
+        self.enc_proj = LinearProjection(
+            features=encoder_supernodes_cfg.enc_dim,
+            use_bias=True,
+            optional=True,
+        )
+
+        # Transformer blocks for conditioning
+        self.enc_blocks = [
+            PrenormBlock(
+                dim=encoder_supernodes_cfg.enc_dim,
+                num_heads=encoder_supernodes_cfg.enc_num_heads,
+            )
+            for _ in range(encoder_supernodes_cfg.enc_depth)
+        ]
+
+        # Perceiver pooling for conditioning
+        if encoder_supernodes_cfg.num_latent_tokens is not None:
+            self.perceiver = PerceiverPoolingBlock(
+                dim=encoder_supernodes_cfg.perc_dim,
+                num_heads=encoder_supernodes_cfg.perc_num_heads,
+                num_query_tokens=encoder_supernodes_cfg.num_latent_tokens,
+                perceiver_kwargs=dict(
+                    kv_dim=encoder_supernodes_cfg.enc_dim,
+                    init_weights=encoder_supernodes_cfg.init_weights,
+                ),
+            )
+        else:
+            self.perceiver = lambda kv: kv
+
+        self.latent_token = self.param(
+            "latent_token",
+            nn.initializers.normal(stddev=0.02),
+            (1, 1, encoder_supernodes_cfg.enc_dim),
+        )
+
+        self.latent_encoder = nn.Sequential(
+            [
+                PrenormBlock(
+                    dim=encoder_supernodes_cfg.enc_dim,
+                    num_heads=encoder_supernodes_cfg.enc_num_heads,
+                )
+                for _ in range(encoder_supernodes_cfg.latent_encoder_depth)
+            ]
+        )
+
+    def __call__(self, points, supernode_idxs):
+
+        # ----- Conditioning branch -----
+        # Supernode pooling
+        x = self.supernode_pooling(
+            input_points=points,
+            supernode_idxs=supernode_idxs,
+        )
+
+        x = self.enc_proj(x)
+
+        for block in self.enc_blocks:
+            x = block(x)
+
+        tokens = self.perceiver(kv=x)
+
+        latent_token = self.latent_token.repeat(tokens.shape[0], axis=0)
+
+        tokens_with_latent = jnp.concatenate([latent_token, tokens], axis=1)
+
+        # Pass through prenorm stack
+        tokens_with_latent = self.latent_encoder(tokens_with_latent)
+
+        # Extract latent code from first token
+        latent_code = tokens_with_latent[:, 0]
+
+        return latent_code

@@ -282,7 +282,7 @@ def main(_):
         lr_schedule = optax.warmup_cosine_decay_schedule(
             init_value=0.0,
             peak_value=cfg.train.lr,
-            warmup_steps=100,
+            warmup_steps=20000,
             decay_steps=cfg.train.num_steps,
             end_value=cfg.train.lr / 100,
         )

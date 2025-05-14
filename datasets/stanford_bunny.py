@@ -3,6 +3,7 @@ from torch.utils import data
 import numpy as np
 import igl
 from jax import random
+import scipy.linalg
 
 
 class StanfordBunny(data.Dataset):
@@ -36,6 +37,53 @@ class StanfordBunny(data.Dataset):
 
     def __getitem__(self, idx):
         return self.data[idx]
+
+
+class DeformedBunny(data.Dataset):
+    def __init__(
+        self,
+        path="./datasets/bunny/stanford_bunny.obj",
+        scale=1.0,
+        t=0.15,
+        points_per_unit_area=6,
+        subset_cardinality=None,
+        seed=42,
+    ):
+
+        m = Mesh(path)
+        self.verts, self.connectivity = m.verts * scale, m.connectivity
+
+        self.data = sample_points_from_mesh(m, points_per_unit_area) * scale
+        if subset_cardinality is not None:
+            rng = np.random.default_rng(seed)
+            if subset_cardinality < len(self.data):
+                indices = rng.choice(
+                    len(self.data),
+                    size=subset_cardinality - len(m.verts),
+                    replace=False,
+                )
+                self.data = self.data[indices]
+
+        self.data = np.concatenate([self.data, self.verts], axis=0)
+        self.data = deform_charts(self.data, t)
+        self.verts = self.data[-len(self.verts):]
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.data[idx]
+
+
+def deform_charts(points, t=0.1):
+
+    M = np.random.normal(0, 1, (3, 3))
+    TrM = np.trace(M)
+    M = M - ( TrM * np.eye(3) / 3)
+    
+    points = (scipy.linalg.expm(t * M) @ points.T).T
+    
+    return points
 
 
 def sample_points_from_mesh(m, points_per_unit_area=2):

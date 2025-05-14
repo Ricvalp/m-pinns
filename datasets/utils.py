@@ -422,8 +422,7 @@ def get_dataset(cfg_dataset: Dict[str, Any]) -> data.Dataset:
 
     elif cfg_dataset.name == "StanfordBunny":
         logging.info(f"Dataset: {cfg_dataset.name}")
-        dataset_cfg = copy(cfg_dataset).unlock()
-        source_dataset = getattr(datasets, dataset_cfg.name)
+        source_dataset = getattr(datasets, cfg_dataset.name)
         dataset = source_dataset(
             scale=cfg_dataset.scale,
             path=cfg_dataset.path,
@@ -452,6 +451,17 @@ def get_dataset(cfg_dataset: Dict[str, Any]) -> data.Dataset:
             path=cfg_dataset.path,
             points_per_unit_area=cfg_dataset.points_per_unit_area,
         )
+    
+    elif cfg_dataset.name == "DeformedBunny":
+        logging.info(f"Dataset: {cfg_dataset.name}")
+        source_dataset = getattr(datasets, cfg_dataset.name)
+        dataset = source_dataset(
+            scale=cfg_dataset.scale,
+            t=cfg_dataset.t,
+            path=cfg_dataset.path,
+            points_per_unit_area=cfg_dataset.points_per_unit_area,
+        )
+
 
     elif cfg_dataset.name == "Propeller":
         logging.info(f"Dataset: {cfg_dataset.name}")

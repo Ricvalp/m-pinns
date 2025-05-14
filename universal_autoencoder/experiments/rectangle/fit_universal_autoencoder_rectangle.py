@@ -15,10 +15,12 @@ import matplotlib.pyplot as plt
 import os
 from flax.training import checkpoints
 import json
-from universal_autoencoder.upt_autoencoder import UniversalAutoencoder
+from universal_autoencoder.upt_autoencoder_grid import UniversalAutoencoderGrid
 from universal_autoencoder.siren import ModulatedSIREN
 from datasets.universal_ae_rectangle_dataset import UniversalAERectangleDataset
 
+# Disable JIT compilation for easier debugging
+# jax.config.update('jax_disable_jit', True)
 
 def load_cfgs():
     """Load configuration from file."""
@@ -32,7 +34,7 @@ def load_cfgs():
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.dataset = dataset =  ml_collections.ConfigDict()
-    dataset.num_supernodes = 32
+    dataset.num_supernodes = 128
     dataset.seed = 37
     dataset.create_dataset = False
     dataset.charts_path = "/scratch-shared/rvalperga/mpinns/datasets/rectangle/" # "/home/rvalperga/mpinns/datasets/rectangle/uae_charts"
@@ -55,6 +57,7 @@ def load_cfgs():
     cfg.train.warmup_lamb_steps = 20000
     cfg.train.max_lamb = 0.0001
     cfg.train.lamb_decay_rate = 0.99995
+    cfg.train.optimizer = "adam"
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # Checkpoint # # # # # # # # # # # # # # # # # #
@@ -94,7 +97,7 @@ def load_cfgs():
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
     cfg.encoder_supernodes_cfg = ml_collections.ConfigDict()
-    cfg.encoder_supernodes_cfg.max_degree = 5
+    cfg.encoder_supernodes_cfg.max_degree = 10
     cfg.encoder_supernodes_cfg.input_dim = 3
     cfg.encoder_supernodes_cfg.gnn_dim = 64
     cfg.encoder_supernodes_cfg.enc_dim = 64
@@ -120,7 +123,7 @@ def load_cfgs():
     cfg.modulated_siren_cfg.output_dim = 3
     cfg.modulated_siren_cfg.num_layers = 2
     cfg.modulated_siren_cfg.hidden_dim = 128
-    cfg.modulated_siren_cfg.omega_0 = 1.0
+    cfg.modulated_siren_cfg.omega_0 = 5.0
     cfg.modulated_siren_cfg.modulation_hidden_dim = 128
     cfg.modulated_siren_cfg.modulation_num_layers = 3
     cfg.modulated_siren_cfg.shift_modulate = True
@@ -187,74 +190,28 @@ def main(_):
     with open(os.path.join(cfg.checkpoint.path, f"{wandb_id}/cfg.json"), "w") as f:
         json.dump(cfg.to_dict(), f, indent=4)
 
-    model = UniversalAutoencoder(cfg=cfg)
+    model = UniversalAutoencoderGrid(cfg=cfg)
     decoder = ModulatedSIREN(cfg=cfg)
     decoder_apply_fn = decoder.apply
 
-    @partial(jax.vmap, in_axes=(0, 0))
-    def geodesic_preservation_loss(distances_matrix, z):
-        z_diff = z[:, None, :] - z[None, :, :]
-        z_dist = jnp.sqrt(jnp.sum(z_diff**2, axis=-1) + 1e-8)
-        z_dist = z_dist / jnp.mean(z_dist)
-        geodesic_dist = distances_matrix / jnp.mean(distances_matrix)
-        return jnp.mean((z_dist - geodesic_dist) ** 2)
+    exmp_chart, exmp_supernode_idxs = next(iter(data_loader))
+    plot_dataset(exmp_chart, exmp_supernode_idxs, name=figure_path + "/rectangle_dataset_with_supernodes.png")
+    val_exmp_chart, val_exmp_supernode_idxs = next(iter(val_data_loader))
+    plot_dataset(val_exmp_chart, val_exmp_supernode_idxs, name=figure_path + "/rectangle_dataset_with_supernodes_val.png")
 
-    @partial(jax.vmap, in_axes=(None, 0, 0))
-    def riemannian_metric_loss(params, latent, coords):
-        d = lambda x: decoder_apply_fn(
-            {"params": params["siren"]}, x, latent
-        )
-        J = jax.vmap(jax.jacfwd(d))(coords)[:, 0, :, :]
-        J_T = jnp.transpose(J, (0, 2, 1))
-        g = jnp.matmul(J_T, J)
-        g_inv = jnp.linalg.inv(g)
-        return jnp.mean(jnp.absolute(g)) + 0.1 * jnp.mean(jnp.absolute(g_inv))
-
-    distance_matrix = jnp.array(dataset.distance_matrix)
-
-    exmp_chart, exmp_supernode_idxs, exmp_chart_id = next(iter(data_loader))
-    plot_dataset(exmp_chart, exmp_supernode_idxs, distance_matrix[exmp_chart_id], name=figure_path + "/rectangle_dataset_with_supernodes.png")
-    val_exmp_chart, val_exmp_supernode_idxs, val_exmp_chart_id = next(iter(val_data_loader))
-    plot_dataset(val_exmp_chart, val_exmp_supernode_idxs, distance_matrix[val_exmp_chart_id], name=figure_path + "/rectangle_dataset_with_supernodes_val.png")
-
-    def geo_riemann_loss_fn(params, batch, key, lamb=1.0):
-
-        points, supernode_idxs, chart_id = batch
-        pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
+    def loss_fn(params, batch):
+        points, supernode_idxs = batch
+        coords = points[..., :2]
+        pred, conditioning = state.apply_fn({"params": params}, points, supernode_idxs, coords)
         recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-
-        noise = (
-            jax.random.normal(key, shape=coords.shape)
-            * cfg.train.noise_scale_riemannian
-        )
-
-        geodesic_loss = geodesic_preservation_loss(distance_matrix[chart_id], coords).mean()
-        riemannian_loss = riemannian_metric_loss(params, conditioning, coords + noise).mean()
-
-        return recon_loss + lamb * (geodesic_loss + riemannian_loss), (recon_loss, geodesic_loss, riemannian_loss)
-
-
-    def geo_loss_fn(params, batch, key, lamb=3.0):
-        points, supernode_idxs, chart_id = batch
-        pred, coords, conditioning = state.apply_fn({"params": params}, points, supernode_idxs)
-        recon_loss = jnp.sum((pred - points) ** 2, axis=-1).mean()
-        geodesic_loss = geodesic_preservation_loss(distance_matrix[chart_id], coords).mean()
-        return recon_loss + lamb * geodesic_loss, (recon_loss, geodesic_loss)
-
+        return recon_loss
 
     @jax.jit
-    def train_step_riemann(state, batch, key, lamb):
-        my_loss = lambda params: geo_riemann_loss_fn(params, batch, key, lamb)
-        (loss, aux), grads = jax.value_and_grad(my_loss, has_aux=True)(state.params)
+    def train_step(state, batch):
+        my_loss = lambda params: loss_fn(params, batch)
+        loss, grads = jax.value_and_grad(my_loss)(state.params)
         state = state.apply_gradients(grads=grads)
-        return state, loss, aux, grads
-
-    @jax.jit
-    def train_step(state, batch, key):
-        my_loss = lambda params: geo_loss_fn(params, batch, key)
-        (loss, aux), grads = jax.value_and_grad(my_loss, has_aux=True)(state.params)
-        state = state.apply_gradients(grads=grads)
-        return state, loss, aux, grads
+        return state, loss
 
     batch_size = cfg.train.batch_size
     num_points = cfg.dataset.num_points
@@ -266,10 +223,23 @@ def main(_):
     )
 
     # Initialize parameters
-    init_points, supernode_idxs, _ = next(iter(data_loader))
-    params = model.init(params_subkey, init_points, supernode_idxs)["params"]
+    init_points, supernode_idxs = next(iter(data_loader))
+    params = model.init(params_subkey, init_points, supernode_idxs, init_points[..., :2])["params"]
     print(f"Number of parameters: {count_parameters(params)}")
-    optimizer = optax.adam(learning_rate=cfg.train.lr)
+    if cfg.train.optimizer == "adam":
+        optimizer = optax.adam(learning_rate=cfg.train.lr)
+    elif cfg.train.optimizer == "cosine_decay":
+        lr_schedule = optax.warmup_cosine_decay_schedule(
+            init_value=0.0,
+            peak_value=cfg.train.lr,
+            warmup_steps=10000,
+            decay_steps=cfg.train.num_steps,
+            end_value=cfg.train.lr / 100,
+        )
+        optimizer = optax.adam(lr_schedule)
+    else:
+        raise ValueError(f"Optimizer {cfg.train.optimizer} not supported")
+    
     state = train_state.TrainState.create(
         apply_fn=model.apply, params=params, tx=optimizer
     )
@@ -282,7 +252,6 @@ def main(_):
     step = 1
     data_loader_iter = iter(data_loader)
 
-    geodesic_riemann_loss_fn = jax.jit(geo_riemann_loss_fn)
 
     for _ in progress_bar:
 
@@ -292,42 +261,14 @@ def main(_):
         try:
             batch = next(data_loader_iter)
             key, subkey = jax.random.split(key)
-            state, loss, aux, grads = train_step(state, batch, subkey)
+            state, loss, = train_step(state, batch)
 
             if step % cfg.wandb.wandb_log_every == 0:
 
-                if step % cfg.wandb.log_riemann_every == 0:
-                    val_batch = next(iter(val_data_loader)) 
-                    loss_riemann, aux_riemann = geodesic_riemann_loss_fn(state.params, val_batch, subkey, lamb=0.0)
-                    wandb.log({"riemannian_loss": aux_riemann[2]}, step=step)
-                    name = figure_path + f"/reconstruction_samples_riemannian_loss_{step}.png"
-                    test_reconstruction(state, val_data_loader, decoder_apply_fn, name=name)
-                    wandb.log({"reconstruction_samples": wandb.Image(name)}, step=step)
-                    wandb.log({
-                        "val_recon_loss": aux_riemann[0],
-                        "val_geodesic_loss": aux_riemann[1],
-                        "val_riemannian_loss": aux_riemann[2],
-                    }, step=step)
-
-                if cfg.train.reg == "geo+riemannian":
-                    log_dict = {
-                        "loss": loss,
-                        "recon_loss": aux[0],
-                        "geodesic_loss": aux[1],
-                        "riemannian_loss": aux[2],
-                    }
-                elif cfg.train.reg == "geodesic_preservation":
-                    log_dict = {
-                        "loss": loss,
-                        "recon_loss": aux[0],
-                        "geodesic_loss": aux[1],
-                    }
-                elif cfg.train.reg == "none":
-                    log_dict = {
-                        "loss": loss,
-                    }
-
                 if cfg.wandb.use:
+                    log_dict = {
+                        "loss": loss,
+                    }
                     wandb.log(log_dict, step=step)
 
             if step % cfg.checkpoint.save_every == 0:
@@ -341,7 +282,6 @@ def main(_):
             
             data_loader_iter = iter(data_loader)
     
-    # save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
 
 # ------------------------------
 # --------- testing ------------
@@ -355,76 +295,6 @@ def main(_):
     if cfg.wandb.use:
         wandb.log({"final_reconstruction_mse": test_mse})
         wandb.log({"reconstruction_samples": wandb.Image(name)})
-
-# ------------------------------
-# --------- finetuning --------- 
-# ------------------------------
-
-    # progress_bar = tqdm(range(cfg.train.num_finetuning_steps))
-    # global_step = step
-    # step = 1
-    # data_loader_iter = iter(data_loader)
-
-    # lamb = 0.0001
-
-    # for _ in progress_bar:
-
-    #     if step < cfg.train.warmup_lamb_steps:
-    #         lamb = cfg.train.max_lamb * (step/cfg.train.warmup_lamb_steps)
-    #     else:
-    #         lamb = lamb * cfg.train.lamb_decay_rate
-
-    #     try:
-    #         batch = next(data_loader_iter)
-    #         key, subkey = jax.random.split(key)
-    #         state, loss, aux, grads = train_step_riemann(state, batch, subkey, lamb=lamb)
-
-    #         if step % cfg.wandb.wandb_log_every == 0 and cfg.wandb.use:
-
-    #             log_dict = {
-    #                 "loss": loss,
-    #                 "recon_loss": aux[0],
-    #                 "geodesic_loss": aux[1],
-    #                 "riemannian_loss": aux[2],
-    #                 "lamb": lamb,
-    #             }
-
-    #             wandb.log(log_dict, step=global_step)
-
-    #         if global_step % cfg.checkpoint.finetuning_save_every == 0:
-    #             save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
-
-    #         progress_bar.set_postfix(loss=float(loss))
-
-    #         step += 1
-    #         global_step += 1
-
-    #     except StopIteration:
-            
-    #         data_loader_iter = iter(data_loader)
-    
-    # save_checkpoint(state, cfg.checkpoint.path + f"/{wandb_id}", keep=cfg.checkpoint.keep, overwrite=cfg.checkpoint.overwrite)
-
-# ------------------------------
-# --- testing post finetuning --
-# ------------------------------
-
-    # print("Testing reconstruction...")
-    # name = figure_path + "/reconstruction_samples_post_finetuning.png"
-    # test_mse = test_reconstruction(state, data_loader, decoder_apply_fn, name=name)
-
-    # if cfg.wandb.use:
-    #     wandb.log({"final_reconstruction_mse": test_mse})
-    #     wandb.log({"reconstruction_samples": wandb.Image(name)})
-
-# ------------------------------
-# ------ getting charts --------
-# ------------------------------
-
-    # coords = jnp.concatenate(coords, axis=0)
-
-    # with open(f"./datasets/{dataset}/charts/charts2d.pkl", "wb") as f:
-    #     pickle.dump(coords, f)
 
 
 def numpy_collate(batch):
@@ -460,10 +330,10 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
     """
     # Get a batch of data
     data_iter = iter(data_loader)
-    points, supernode_idxs, chart_id = next(data_iter)
+    points, supernode_idxs = next(data_iter)
     
     # Generate reconstructions
-    reconstructions, coords, conditioning = state.apply_fn({"params": state.params}, points, supernode_idxs)
+    reconstructions, conditioning = state.apply_fn({"params": state.params}, points, supernode_idxs, points[..., :2])
 
     # Calculate Riemannian metric determinant
     @partial(jax.vmap, in_axes=(None, 0, 0))
@@ -477,12 +347,12 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
         g_inv = jnp.linalg.inv(g)
         return jnp.linalg.norm(g, axis=(1, 2)), jnp.linalg.norm(g_inv, axis=(1, 2))
 
-    det_g, det_g_inv = riemannian_metric_norm(state.params, conditioning, coords)
+    det_g, det_g_inv = riemannian_metric_norm(state.params, conditioning, points[..., :2])
 
     # Convert to numpy for plotting
     points_np = np.array(points)
     reconstructions_np = np.array(reconstructions)
-    coords_np = np.array(coords)
+    coords_np = np.array(points[..., :2])
     det_g_np = np.array(det_g)
     det_g_inv_np = np.array(det_g_inv)
     
@@ -551,7 +421,9 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             points_np[i, :, 0], 
             points_np[i, :, 1], 
             points_np[i, :, 2], 
-            c='blue', alpha=0.6, s=10
+            c=points_np[i, :, 2],
+            alpha=0.6,
+            s=10
         )
         if i == 0:
             ax1.set_title(f'Original Points')
@@ -570,7 +442,8 @@ def test_reconstruction(state, data_loader, decoder_apply_fn, num_samples=5, nam
             reconstructions_np[i, :, 0], 
             reconstructions_np[i, :, 1], 
             reconstructions_np[i, :, 2], 
-            c='red', alpha=0.6, s=10
+            c=reconstructions_np[i, :, 2],
+            alpha=0.6, s=10
         )
         if i == 0:
             ax2.set_title(f'Reconstructed Points')
@@ -642,7 +515,7 @@ def save_checkpoint(state, path, keep=5, overwrite=False):
     checkpoints.save_checkpoint(Path(path).absolute(), state, step=step, keep=keep, overwrite=overwrite)
 
 
-def plot_dataset(chart, supernode_idxs, distance_matrix, name=None):
+def plot_dataset(chart, supernode_idxs, name=None):
     """
     Plot a batch of charts with the supernodes highlighted in a different color.
     
@@ -675,11 +548,6 @@ def plot_dataset(chart, supernode_idxs, distance_matrix, name=None):
     y_limits = [y_min_global - y_pad, y_max_global + y_pad]
     z_limits = [z_min_global - z_pad, z_max_global + z_pad]
     
-    # Find global min/max for colormap scaling (distances)
-    all_distances = np.concatenate([distance_matrix[i][0] for i in range(num_samples)])
-    distance_min = all_distances.min()
-    distance_max = all_distances.max()
-    
     fig = plt.figure(figsize=(12, num_samples))
     
     for i in range(num_samples):
@@ -687,21 +555,15 @@ def plot_dataset(chart, supernode_idxs, distance_matrix, name=None):
         
         # Create a mask for supernodes
         is_supernode = np.zeros(len(chart[i]), dtype=bool)
-        is_supernode[supernode_idxs[i]] = True
-
-        distances = distance_matrix[i]
-        
+        is_supernode[supernode_idxs[i]] = True        
         # Plot regular points with consistent colormap scaling
         ax.scatter(
             chart[i][~is_supernode, 0],
             chart[i][~is_supernode, 1],
             chart[i][~is_supernode, 2],
-            c=distances[0][~is_supernode],
             alpha=0.5,
             s=10,
             label='Regular Points',
-            vmin=distance_min,
-            vmax=distance_max
         )
         
         # Plot supernodes with different color

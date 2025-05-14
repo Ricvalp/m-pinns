@@ -4,15 +4,18 @@ from pathlib import Path
 
 
 sweep_params = {
-    "config.dataset.num_supernodes": [32, 64, 128, 256, 64, 64, 64, 64, 64, 64, 64, 64, 64],
-    "config.train.batch_size": [64, 128, 64, 32, 64, 64, 64, 64, 64, 64, 64, 64, 64],
-    "config.train.lr": [1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4, 1e-4],
-    "config.encoder_supernodes_cfg.max_degree": [5, 5, 5, 10, 10, 10, 5, 5, 5, 10, 10, 10, 5],
-    "config.encoder_supernodes_cfg.coord_enc_dim": [32, 64, 128, 64, 32, 64, 128, 64, 32, 64, 128, 64, 32],
-    "config.modulated_siren_cfg.omega_0": [1.0, 1.0, 3.0, 5.0, 1.0, 1.0, 3.0, 5.0, 1.0, 1.0, 3.0, 5.0, 1.0],
-    "config.modulated_siren_cfg.num_layers": [2, 2, 3, 4, 2, 2, 3, 4, 2, 2, 3, 4, 2],
-    "config.encoder_supernodes_cfg.enc_dim": [64, 32, 64, 32, 64, 32, 64, 64, 64, 64, 64, 64, 64],
-    "config.encoder_supernodes_cfg.gnn_dim": [64, 32, 64, 32, 64, 32, 64, 64, 64, 64, 64, 64, 64],
+    "config.dataset.num_supernodes": [32, 64, 128, 256, 64, 64, 64, 64, 64, 128, 512, 32, 64, 128, 256, 64, 64],
+    "config.encoder_supernodes_cfg.max_degree": [5, 5, 5, 5, 5, 5, 5, 10, 10, 15, 5, 5, 5, 5, 5, 5, 5],
+    "config.encoder_supernodes_cfg.gnn_dim": [64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 64, 128, 64, 64, 128, 128, 64],
+    "config.encoder_supernodes_cfg.perc_dim": [256, 256, 256, 256, 512, 512, 256, 256, 256, 256, 512, 512, 128, 64, 64, 128, 128],
+    "config.encoder_supernodes_cfg.perc_num_heads": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+    "config.modulated_siren_cfg.omega_0": [1.0, 3.0, 5.0, 1.0, 3.0, 5.0, 1.0, 3.0, 5.0, 3.0, 3.0, 1.0, 3.0, 5.0, 1.0, 3.0, 5.0],
+    "config.modulated_siren_cfg.num_layers": [3, 4, 4, 3, 3, 4, 3, 3, 3, 3, 4, 3, 3, 3, 3, 4, 4],
+    "config.modulated_siren_cfg.hidden_dim": [256, 128, 256, 256, 256, 256, 256, 256, 256, 256, 32, 256, 128, 256, 256, 256, 256],
+    "config.encoder_supernodes_cfg.enc_depth": [4, 4, 4, 4, 4, 4, 2, 2, 8, 8, 8, 4, 4, 4, 4, 4, 4],
+    "config.train.batch_size": [64, 64, 64, 64, 64, 128, 128, 128, 64, 64, 64, 128, 128, 128, 128, 128, 32, 32, 32, 64, 64, 64],
+    "config.train.lr": [1e-3, 1e-3, 1e-3, 1e-4, 1e-3, 1e-3, 1e-3, 1e-4, 1e-4, 1e-3, 1e-3, 1e-3, 1e-5, 1e-5, 1e-5, 1e-5, 1e-5],
+    "config.train.optimizer": ["cosine_decay", "cosine_decay", "cosine_decay", "cosine_decay", "cosine_decay", "adam", "adam", "adam", "adam", "adam", "adam", "adam", "adam", "adam", "adam"],
 }
 
 # sweep_params_2 = {
@@ -32,7 +35,7 @@ dryrun = False  # Set to True to test the script without running jobs
 job_name = "sweep_rectangle"
 
 # Paths
-script_path = "$HOME/mpinns/universal_autoencoder/fit_universal_autoencoder_rectangle.py"
+script_path = "$HOME/mpinns/universal_autoencoder/experiments/rectangle/fit_universal_autoencoder_rectangle.py"
 output_dir = f"/scratch-shared/rvalperga/mpinns/universal_autoencoder/experiments/rectangle/{job_name}"
 template_path = "/home/rvalperga/mpinns/universal_autoencoder/experiments/rectangle/template.slurm"
 
@@ -47,8 +50,8 @@ SBU_COSTS = {
     "gpu_a100": 128,
     "gpu_h100": 192,
 }
-partition = "gpu_h100"
-time_limit = "03:00:00"
+partition = "gpu_a100"
+time_limit = "05:00:00"
 # Calculate the total cost
 if partition not in SBU_COSTS:
     raise ValueError(f"Unknown partition: {partition}. Available partitions are: {list(SBU_COSTS.keys())}")

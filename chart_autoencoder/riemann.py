@@ -143,10 +143,6 @@ def get_metric_tensor_and_sqrt_det_g_autodecoder(cfg, step, inverse=False):
             decoder,
         ), d_params
 
-
-
-
-
 def get_metric_tensor_and_sqrt_det_g_universal_autodecoder(autoencoder_cfg, cfg, charts, inverse=False):
     
     model = UniversalAutoencoder(cfg=autoencoder_cfg)

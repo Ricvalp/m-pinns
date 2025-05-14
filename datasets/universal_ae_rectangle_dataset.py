@@ -18,8 +18,73 @@ import torch
 import math
 
 
-
 class UniversalAERectangleDataset(data.Dataset):
+    def __init__(
+        self,
+        config,
+        train=True,
+    ):
+        
+        self.config = config.dataset
+        self.train = train
+        
+        x = np.linspace(0, 1, 50)
+        y = np.linspace(0, 1, 50)
+        xx, yy = np.meshgrid(x, y)
+        points = np.zeros((xx.size, 3))
+        points[:, 0] = xx.flatten()
+        points[:, 1] = yy.flatten()
+        points[:, 2] = 0.0
+        self.grid = points
+
+        self.num_points = self.grid.shape[0]
+    
+    def _get_deformed_points(self, t):
+        """
+        Apply a smooth deformation in the z-direction to the chart points.
+        
+        Args:
+            chart_id: index of the chart to transform
+            t: controls the strength of deformation (0.0 = no deformation)
+        
+        Returns:
+            Transformed points
+        """
+        # Get the base points for this chart
+        points = self.grid.copy()  # Make a copy to avoid modifying original data
+        
+        # Get x and y coordinates
+        x = points[:, 0]
+        y = points[:, 1]
+        
+        # Generate random frequencies (but still zero at boundaries)
+        freq_x = np.random.randint(1, 4, size=(2,))  # Random integer between 1 and 3
+        freq_y = np.random.randint(1, 4, size=(2,))
+        
+        # Create a 2D sine wave deformation in z-direction that is zero at the boundaries
+        # Sum over various frequencies for a more complex deformation pattern
+        deformation_z = np.zeros_like(x)
+        for i in range(len(freq_x)):
+            # Each term is zero when x=0, x=1, y=0, or y=1
+            deformation_z += t[i] * np.sin(freq_x[i] * np.pi * x) * np.sin(freq_y[i] * np.pi * y)
+        
+        # Apply the deformation to z coordinate
+        points[:, 2] = deformation_z
+        
+        return points
+
+    def __len__(self):
+        return 100000
+
+    def __getitem__(self, idx):
+
+        supernode_idxs = np.random.permutation(self.num_points)[: self.config.num_supernodes]
+        t = np.random.uniform(0, .8, size=(4,))
+        points = self._get_deformed_points(t=t)
+        return points, supernode_idxs
+
+
+class __UniversalAERectangleDataset(data.Dataset):
     def __init__(
         self,
         config,
