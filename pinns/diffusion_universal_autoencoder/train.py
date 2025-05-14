@@ -18,13 +18,13 @@ from samplers import (
 )
 
 from chart_autoencoder import (
-    get_metric_tensor_and_sqrt_det_g_universal_autodecoder,
+    get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder,
     load_charts3d,
 )
 
-from pinns.diffusion_single_gpu_universal_autoencoder.get_dataset import get_dataset
+from pinns.diffusion_universal_autoencoder.get_dataset import get_dataset
 
-from pinns.diffusion_single_gpu_universal_autoencoder.plot import (
+from pinns.diffusion_universal_autoencoder.plot import (
     plot_domains,
     plot_domains_3d,
     plot_domains_with_metric,
@@ -63,34 +63,20 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     with open(checkpoint_dir + "/cfg.json", "w") as f:
         json.dump(config.to_dict(), f, indent=4)
 
-    
-    (
-        loaded_charts3d,
-        loaded_charts_idxs,
-        loaded_boundaries,
-        loaded_boundary_indices,
-    ) = load_charts3d(config.dataset.charts_path)
-
-    charts_mu = np.zeros((len(loaded_charts3d.keys()), 3))
-    charts_std = np.zeros((len(loaded_charts3d.keys()), ))
-    for key in loaded_charts3d.keys():
-        mu = loaded_charts3d[key].mean(axis=0)
-        charts_mu[key] = mu
-        loaded_charts3d[key] = loaded_charts3d[key] - mu
-        std = loaded_charts3d[key].std()
-        charts_std[key] = std
-        loaded_charts3d[key] = loaded_charts3d[key] / std
-
     (
         inv_metric_tensor,
         sqrt_det_g,
         decoder,
-    ), (conditionings, d_params) = get_metric_tensor_and_sqrt_det_g_universal_autodecoder(
+    ), (conditionings, d_params) = get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(
         autoencoder_cfg=autoencoder_config,
         cfg=config,
-        charts=loaded_charts3d,
+        charts=charts3d,
         inverse=True,
     )
+
+
+
+
 
     x, y, u0, boundaries_x, boundaries_y, charts3d = get_dataset(
         autoencoder_config.dataset.charts_path,
@@ -180,13 +166,11 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         boundaries=(boundaries_x, boundaries_y),
     )
 
-    evaluator = models.DiffusionEvaluator(config, model)
-
     print("Waiting for JIT...")
 
     for step in tqdm(range(1, config.training.max_steps + 1), desc="Training"):
 
-        set_profiler(config.profiler, step, config.profiler.log_dir)
+        # set_profiler(config.profiler, step, config.profiler.log_dir)
 
         batch = next(res_sampler), next(boundary_sampler), next(ics_sampler)
         loss, model.state = model.step(model.state, batch)

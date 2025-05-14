@@ -9,7 +9,7 @@ from jaxpi.evaluator import BaseEvaluator
 from jaxpi.models import MPINN
 
 
-class Diffusion(MPINN):
+class DiffusionTime(MPINN):
     def __init__(
         self, config, inv_metric_tensor, sqrt_det_g, d_params, ics, boundaries
     ):
