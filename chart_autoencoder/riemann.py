@@ -8,7 +8,7 @@ from pathlib import Path
 import optax
 from flax import linen as nn
 from flax.training import train_state
-
+from tqdm import tqdm
 from chart_autoencoder.models import Decoder, Encoder
 from chart_autoencoder.utils import ModelCheckpoint
 
@@ -168,7 +168,7 @@ def get_metric_tensor_and_sqrt_det_g_universal_autodecoder(autoencoder_cfg, cfg,
     conditionings = []
     coords = {}
     key = jax.random.PRNGKey(0)
-    for chart_key in charts.keys():
+    for chart_key in tqdm(charts.keys()):
         key, subkey = jax.random.split(key)
         supernode_idxs = jax.random.permutation(subkey, jnp.arange(charts[chart_key].shape[0]))[:cfg.num_supernodes]
         out, coord, conditioning = model_apply_fn({"params": params}, charts[chart_key][None, :, :], supernode_idxs[None, :])

@@ -14,10 +14,10 @@ def get_config():
     config.N = 50  # Number of gt points in the training set
     config.idxs = None
 
-    config.num_supernodes = 64
+    config.num_supernodes = 128
 
     config.dataset = ml_collections.ConfigDict()
-    config.dataset.charts_path = "./datasets/coil/charts/t010/"
+    config.dataset.charts_path = "./datasets/coil/charts/t015/"
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()

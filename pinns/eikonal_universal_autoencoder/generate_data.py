@@ -16,7 +16,16 @@ from chart_autoencoder import (
 )
 
 from pinns.eikonal_universal_autoencoder.get_dataset import get_dataset
-from pinns.eikonal_universal_autoencoder.plot import plot_charts_solution
+from pinns.eikonal_universal_autoencoder.plot import (
+    plot_charts_solution,
+    plot_charts_with_supernodes,
+    plot_domains,
+    plot_domains_3d,
+    plot_domains_3d_html,
+    plot_domains_with_metric,
+    plot_combined_3d_with_metric,
+)
+
 import numpy as np
 
 
@@ -62,14 +71,89 @@ def generate_data(config: ml_collections.ConfigDict):
     Path(config.figure_path).mkdir(parents=True, exist_ok=True)
     Path(config.training.batches_path).mkdir(parents=True, exist_ok=True)
 
-    plot_charts_solution(
-        bcs_x,
-        bcs_y,
-        bcs,
-        name=config.figure_path + "/generated_eikonal_train_bcs.png",
-        vmin=0.0,
-        vmax=1.5,
-    )
+
+
+    if config.plot:
+
+        plot_charts_solution(
+            bcs_x,
+            bcs_y,
+            bcs,
+            name=config.figure_path + "/generated_eikonal_train_bcs.png",
+            vmin=0.0,
+            vmax=1.5,
+        )
+
+        # plot_2d_scatter(
+        #     x,
+        #     y,
+        #     name=Path(config.figure_path) / "2d_scatter.png",
+        # )
+
+        plot_charts_with_supernodes(
+            loaded_charts3d,
+            np.random.randint(0, len(loaded_charts3d), 64),
+            name=Path(config.figure_path) / "charts_with_supernodes.png",
+        )
+
+        plot_domains(
+            x,
+            y,
+            boundaries_x,
+            boundaries_y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            name=Path(config.figure_path) / "domains.png",
+        )
+
+        plot_domains_3d(
+            x,
+            y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            decoder=decoder,
+            conditionings=conditionings,
+            d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
+            name=Path(config.figure_path) / "domains_3d.png",
+        )
+
+        plot_domains_3d_html(
+            x,
+            y,
+            bcs_x=bcs_x,
+            bcs_y=bcs_y,
+            bcs=bcs,
+            decoder=decoder,
+            conditionings=conditionings,
+            d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
+            name=Path(config.figure_path) / "domains_3d.html",
+        )
+
+        plot_domains_with_metric(
+            x,
+            y,
+            sqrt_det_g,
+            conditionings=conditionings,
+            name=Path(config.figure_path) / "domains_with_metric.png",
+        )
+
+        plot_combined_3d_with_metric(
+            x,
+            y,
+            decoder=decoder,
+            sqrt_det_g=sqrt_det_g,
+            conditionings=conditionings,
+            d_params=d_params,
+            charts_mu=charts_mu,
+            charts_std=charts_std,
+            name=Path(config.figure_path) / "combined_3d_with_metric.png",
+        )
 
     bcs_sampler = iter(
         UniformBCSampler(

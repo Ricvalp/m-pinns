@@ -24,6 +24,7 @@ class UniversalAEDataset(data.Dataset):
         
         self.config = config.dataset
         self.train = train
+        self.t = config.dataset.t
         if self.config.create_dataset:
             m = Mesh(self.config.mesh_path)
             self.verts, self.connectivity = m.verts, m.connectivity
@@ -60,6 +61,8 @@ class UniversalAEDataset(data.Dataset):
                 min_dist=self.config.min_dist,
                 nearest_neighbors=self.config.nearest_neighbors,
             )
+            
+            print(f"Average number of points per chart: {np.mean([len(chart) for chart in charts.values()])}")
 
             total_charts += len(charts)
 
@@ -182,7 +185,6 @@ class UniversalAEDataset(data.Dataset):
         points = (scale * R @ self.charts[chart_id].T).T
         
         # Apply a smooth, invertible deformation (diffeomorphism)
-
         M = np.random.normal(0, 1, (3, 3))
         TrM = np.trace(M)
         M = M - ( TrM * np.eye(3) / 3)
@@ -198,14 +200,11 @@ class UniversalAEDataset(data.Dataset):
     def __getitem__(self, idx):
         supernode_idxs = np.random.permutation(self.num_points)[: self.config.num_supernodes]
         chart_id = np.random.randint(0, len(self.charts))
-        t = np.random.uniform(0, 0.2)
-        points = self._get_rotated_scaled_deformed_points(chart_id, t=0.2)
+        # t = np.random.uniform(0, 0.2)
+        points = self._get_rotated_scaled_deformed_points(chart_id, t=self.t)
         if self.config.normalize_charts:
-            points = self.charts[chart_id]
             std = points.std()
             points = points/std
-        else:
-            points = self.charts[chart_id]
         return points, supernode_idxs, chart_id
 
 
@@ -348,13 +347,13 @@ def load_config():
     config.dataset = dataset = ml_collections.ConfigDict()
     dataset.seed = 37
     dataset.create_dataset = True
-    dataset.mesh_path = "./datasets/coil/coil_1.2_MM.obj"
-    dataset.charts_path = "/scratch-shared/rvalperga/mpinns/datasets/coil/uae_dataset" # "/home/rvalperga/mpinns/datasets/coil/uae_charts"
-    dataset.points_per_unit_area = 3
+    dataset.mesh_path = "./datasets/bunny/stanford_bunny.obj"
+    dataset.charts_path = "/scratch-shared/rvalperga/mpinns/datasets/bunny/uae_dataset" # "/home/rvalperga/mpinns/datasets/coil/uae_charts"
+    dataset.points_per_unit_area = 6
     dataset.subset_cardinality = None
-    dataset.num_points = 500
-    dataset.iterations = 30
-    dataset.min_dist = 9.
+    dataset.num_points = 400
+    dataset.iterations = 20
+    dataset.min_dist = 6.
     dataset.nearest_neighbors = 10
     dataset.save_charts_every = 10
     dataset.train = True
