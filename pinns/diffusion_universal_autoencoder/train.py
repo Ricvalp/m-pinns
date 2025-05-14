@@ -52,8 +52,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
 
     Path(config.figure_path).mkdir(parents=True, exist_ok=True)
 
-    # Path(config.profiler.log_dir).mkdir(parents=True, exist_ok=True)
-
     autoencoder_config = load_config(
         Path(config.autoencoder_checkpoint.checkpoint_path) / "cfg.json",
     )
@@ -63,6 +61,26 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     with open(checkpoint_dir + "/cfg.json", "w") as f:
         json.dump(config.to_dict(), f, indent=4)
 
+    X = jnp.linspace(0, 1, 50)
+    Y = jnp.linspace(0, 1, 50)
+    XX, YY = jnp.meshgrid(X, Y)
+    coords = jnp.zeros((XX.size, 3))
+    coords[:, 0] = XX.flatten()
+    coords[:, 1] = YY.flatten()
+
+    boundaries_x = jnp.zeros((XX.size, 3))
+    boundaries_x[:, 0] = XX.flatten()
+    boundaries_x[:, 1] = YY.flatten()
+
+    boundaries_y = jnp.zeros((XX.size, 3))
+    boundaries_y[:, 0] = XX.flatten()
+    boundaries_y[:, 1] = YY.flatten()
+    
+    charts3d = []
+    ts = np.linspace(0.0, 0.8, 1000)
+    for t in ts:
+        charts3d.append(get_deformed_points(coords, t))
+
     (
         inv_metric_tensor,
         sqrt_det_g,
@@ -71,17 +89,18 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         autoencoder_cfg=autoencoder_config,
         cfg=config,
         charts=charts3d,
+        coords=coords,
         inverse=True,
     )
 
+    x = coords[:, 0]
+    y = coords[:, 1]
 
+    def initial_conditions_spike(x, y, x0=0.5, y0=0.5, sigma=1.0, amplitude=10.0):
+        return amplitude * np.exp(-((x - x0) ** 2 + (y - y0) ** 2) / sigma**2)
 
+    u0 = initial_conditions_spike(x, y)
 
-
-    x, y, u0, boundaries_x, boundaries_y, charts3d = get_dataset(
-        autoencoder_config.dataset.charts_path,
-        sigma=1.0,
-    )
 
     if config.plot:
 
@@ -193,14 +212,42 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
                     keep=config.saving.num_keep_ckpts,
                 )
 
-    # for step in tqdm(range(step, step + config.training.lbfgs_max_steps + 1), desc="L-BFGS"):
-
-    #     # set_profiler(config.profiler, step, config.profiler.log_dir)
-
-    #     batch = next(res_sampler), next(boundary_sampler), next(ics_sampler)
-    #     loss, model.state = model.lbfgs_step(model.state, batch)
-
-    #     if step % config.wandb.log_every_steps == 0:
-    #         wandb.log({"loss": loss}, step)
-
     return model
+
+
+
+
+
+def get_deformed_points(self, grid, t):
+    """
+    Apply a smooth deformation in the z-direction to the chart points.
+    
+    Args:
+        chart_id: index of the chart to transform
+        t: controls the strength of deformation (0.0 = no deformation)
+    
+    Returns:
+        Transformed points
+    """
+    # Get the base points for this chart
+    points = grid.copy()  # Make a copy to avoid modifying original data
+    
+    # Get x and y coordinates
+    x = points[:, 0]
+    y = points[:, 1]
+    
+    # Generate random frequencies (but still zero at boundaries)
+    freq_x = np.array([1, 2])  # Random integer between 1 and 3
+    freq_y = np.array([1, 2])
+    
+    # Create a 2D sine wave deformation in z-direction that is zero at the boundaries
+    # Sum over various frequencies for a more complex deformation pattern
+    deformation_z = np.zeros_like(x)
+    for i in range(len(freq_x)):
+        # Each term is zero when x=0, x=1, y=0, or y=1
+        deformation_z += t[i] * np.sin(freq_x[i] * np.pi * x) * np.sin(freq_y[i] * np.pi * y)
+    
+    # Apply the deformation to z coordinate
+    points[:, 2] = deformation_z
+    
+    return points

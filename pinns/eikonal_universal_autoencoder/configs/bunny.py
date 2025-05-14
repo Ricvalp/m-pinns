@@ -11,7 +11,8 @@ def get_config():
     config.plot = True
 
     config.mode = "train"
-    config.N = 50  # Number of gt points in the training set
+    config.N = 20  # Number of gt points in the training set
+    config.bcs_seed = 42
     config.idxs = None
 
     config.num_supernodes = 128
@@ -92,7 +93,7 @@ def get_config():
         {"bcs": 1.0, "res": 1.0, "bc": 1.0}
     )
     weighting.momentum = 0.9
-    weighting.update_every_steps = 100000
+    weighting.update_every_steps = 300
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()
@@ -132,6 +133,6 @@ def get_config():
     config.input_dim = 2
 
     # Integer for PRNG random seed.
-    config.seed = 42
+    config.seed = 43
 
     return config

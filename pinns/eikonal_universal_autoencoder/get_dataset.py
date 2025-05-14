@@ -7,7 +7,7 @@ from flax.training import checkpoints
 from chart_autoencoder.get_charts import load_charts, find_verts_in_charts
 
 
-def get_dataset(charts_path, N=100, idxs=None):
+def get_dataset(charts_path, N=100, idxs=None, seed=42):
 
     (
         loaded_charts3d,
@@ -43,13 +43,13 @@ def get_dataset(charts_path, N=100, idxs=None):
         boundaries_y[starting_chart][ending_chart] = starting_chart_points[:, 1]
 
     bcs_x, bcs_y, bcs = get_eikonal_bcs(
-        charts_path=charts_path, x=x, y=y, charts3d=loaded_charts3d, N=N, idxs=idxs
+        charts_path=charts_path, x=x, y=y, charts3d=loaded_charts3d, N=N, seed=seed, idxs=idxs
     )
 
     return x, y, boundaries_x, boundaries_y, bcs_x, bcs_y, bcs, loaded_charts3d
 
 
-def get_eikonal_bcs(charts_path, x, y, charts3d, N=50, seed=37, idxs=None):
+def get_eikonal_bcs(charts_path, x, y, charts3d, N=50, seed=42, idxs=None):
 
     verts = np.load(charts_path + "/verts.pkl", allow_pickle=True)
     connectivity = np.load(charts_path + "/connectivity.pkl", allow_pickle=True)

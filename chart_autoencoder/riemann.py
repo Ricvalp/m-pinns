@@ -208,18 +208,13 @@ def get_metric_tensor_and_sqrt_det_g_universal_autodecoder(autoencoder_cfg, cfg,
 
 
 
-def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg, cfg, charts, inverse=False):
+def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg, cfg, charts, coords, inverse=False):
     
     model = UniversalAutoencoderGrid(cfg=autoencoder_cfg)
     decoder = ModulatedSIREN(cfg=autoencoder_cfg)
     model_apply_fn = model.apply
 
-    x = jnp.linspace(0, 1, 50)
-    y = jnp.linspace(0, 1, 50)
-    xx, yy = jnp.meshgrid(x, y)
-    coords = jnp.zeros((xx.size, 3))
-    coords[:, 0] = xx.flatten()
-    coords[:, 1] = yy.flatten()
+
 
     init_points, supernode_idxs = coords[None, :, :], jax.random.randint(jax.random.PRNGKey(0), (16, autoencoder_cfg.dataset.num_supernodes), 0, 128)
     params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs)["params"]
@@ -233,15 +228,11 @@ def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg,
 
     conditionings = []
     key = jax.random.PRNGKey(0)
-    for charts_ in tqdm(charts.keys()):
+    for chart in tqdm(charts):
         key, subkey = jax.random.split(key)
-        supernode_idxs = jax.random.permutation(subkey, jnp.arange(charts[chart_key].shape[0]))[:cfg.num_supernodes]
-        out, coord, conditioning = model_apply_fn({"params": params}, charts[chart_key][None, :, :], supernode_idxs[None, :])
+        supernode_idxs = jax.random.permutation(subkey, jnp.arange(chart.shape[0]))[:cfg.num_supernodes]
+        out, conditioning = model_apply_fn({"params": params}, chart[None, :, :], supernode_idxs[None, :], coords[None, :, :])
         conditionings.append(conditioning)
-        coords[chart_key] = coord[0, :, :]
-    
-    with open(cfg.dataset.charts_path + "/charts2d.pkl", "wb") as f:
-        pickle.dump(coords, f)
 
     conditionings = jnp.concatenate(conditionings, axis=0)
     d_params = params["siren"]

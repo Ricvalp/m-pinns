@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from datasets.utils import Mesh
 from pathlib import Path
 import numpy as np
-import os
 
 import ml_collections
 
@@ -12,10 +11,7 @@ import multiprocessing as mp
 from functools import partial
 import networkx as nx
 from sklearn.neighbors import KDTree
-import scipy.linalg
-from chart_autoencoder import fast_region_growing
-import torch
-import math
+
 
 
 class UniversalAERectangleDataset(data.Dataset):

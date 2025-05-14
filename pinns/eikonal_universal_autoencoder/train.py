@@ -255,6 +255,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
     _, _, _, _, eval_x, eval_y, u_eval, _ = get_dataset(
         charts_path=config.dataset.charts_path,
         N=config.logging.num_eval_points,
+        seed=config.bcs_seed,
     )
     max_eval_points = max([len(eval_x[key]) for key in eval_x.keys()])
     eval_idxs = {
