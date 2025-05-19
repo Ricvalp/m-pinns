@@ -18,7 +18,7 @@ def get_config():
     cfg.umap.umap_embeddings_path = "./datasets/coil/charts/umap_embeddings.npy"
     cfg.umap.n_neighbors = 15
     cfg.umap.learning_rate = 1.0
-    cfg.umap.min_dist = 0.8
+    cfg.umap.min_dist = 1.
     cfg.umap.random_state = 42
     cfg.umap.n_components = 2
 

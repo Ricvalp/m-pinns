@@ -88,12 +88,6 @@ def train_and_evaluate(config: ml_collections.ConfigDict):
         loaded_boundary_indices,
     ) = load_charts3d(config.dataset.charts_path)
 
-    # if config.plot:        
-    #     plot_3d_point_cloud_single_chart(
-    #         loaded_charts3d[0],
-    #         name=Path(config.figure_path) / "charts_3d",
-    #     )
-
     charts_mu = np.zeros((len(loaded_charts3d.keys()), 3))
     charts_std = np.zeros((len(loaded_charts3d.keys()), ))
     for key in loaded_charts3d.keys():

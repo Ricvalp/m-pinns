@@ -12,13 +12,13 @@ def get_config():
 
     config.mode = "train"
     config.N = 20  # Number of gt points in the training set
-    config.bcs_seed = 42
+    config.bcs_seed = 42 # 42
     config.idxs = None
 
     config.num_supernodes = 128
 
     config.dataset = ml_collections.ConfigDict()
-    config.dataset.charts_path = "./datasets/bunny/charts/t015/"
+    config.dataset.charts_path = "./datasets/bunny/charts/t015-2"
 
     # Autoencoder checkpoint
     config.autoencoder_checkpoint = ml_collections.ConfigDict()
@@ -54,7 +54,7 @@ def get_config():
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
     optim.grad_accum_steps = 0
-    optim.optimizer = "Adam"  #  "AdamWarmupCosineDecay"
+    optim.optimizer = "Adam"  # "AdamWarmupCosineDecay"
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
@@ -64,12 +64,12 @@ def get_config():
     optim.decay_rate = 0.9
 
     # cosine decay
-    optim.warmup_steps = 1000
-    optim.decay_steps = 10000
+    optim.warmup_steps = 10000
+    optim.decay_steps = 100000
 
     # Training
     config.training = training = ml_collections.ConfigDict()
-    training.max_steps = 100000
+    training.max_steps = 200000
     training.batch_size = 128  # 1024
     training.lbfgs_max_steps = 0
 
@@ -90,10 +90,10 @@ def get_config():
     config.weighting = weighting = ml_collections.ConfigDict()
     weighting.scheme = "grad_norm"
     weighting.init_weights = ml_collections.ConfigDict(
-        {"bcs": 1.0, "res": 1.0, "bc": 4.0}
+        {"bcs": 1.0, "res": 1.0, "bc": 5.0}
     )
     weighting.momentum = 0.9
-    weighting.update_every_steps = 300
+    weighting.update_every_steps = 10000
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()
@@ -122,7 +122,7 @@ def get_config():
     # Eval
     config.eval = eval = ml_collections.ConfigDict()
     eval.eval_with_last_ckpt = False
-    eval.checkpoint_dir = "pinns/eikonal_universal_autoencoder/bunny/checkpoints/best/bq76biaz"
+    eval.checkpoint_dir = "pinns/eikonal_universal_autoencoder/bunny/checkpoints/bq76biaz"
     eval.step = 179999
     eval.N = 2000
     eval.use_existing_solution = False

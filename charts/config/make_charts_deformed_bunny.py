@@ -16,11 +16,11 @@ def get_config():
     cfg.dataset = ConfigDict()
     cfg.dataset.seed = 37
     cfg.dataset.name = "StanfordBunny"
-    cfg.dataset.path = "./datasets/bunny/charts/t015/deformed_bunny_mesh.obj"
+    cfg.dataset.path = "./datasets/bunny/charts/t015-2/deformed_bunny_mesh.obj"
     cfg.dataset.scale = 1.0
     cfg.dataset.points_per_unit_area = 6
     cfg.dataset.subset_cardinality = None
-    cfg.dataset.charts_path = "./datasets/bunny/charts/t015/"
+    cfg.dataset.charts_path = "./datasets/bunny/charts/t015-2/"
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # # # # # # # # # # # # #   Charts  # # # # # # # # # # # # # # # #

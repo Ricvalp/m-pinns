@@ -212,12 +212,12 @@ def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg,
     
     model = UniversalAutoencoderGrid(cfg=autoencoder_cfg)
     decoder = ModulatedSIREN(cfg=autoencoder_cfg)
-    model_apply_fn = model.apply
+    model_apply_fn = jax.jit(model.apply)
 
     coords = jnp.array(coords)[None, :, :]
 
-    init_points = jnp.zeros((1, coords.shape[1], 3)) 
-    supernode_idxs = jax.random.randint(jax.random.PRNGKey(0), (1, autoencoder_cfg.dataset.num_supernodes), 0, 128)
+    init_points = jnp.zeros((16, coords.shape[1], 3)) 
+    supernode_idxs = jax.random.randint(jax.random.PRNGKey(0), (16, autoencoder_cfg.dataset.num_supernodes), 0, 128)
     
     params = model.init(jax.random.PRNGKey(0), init_points, supernode_idxs, coords)["params"]
     optimizer = optax.adam(learning_rate=0.1)
@@ -233,7 +233,7 @@ def get_metric_tensor_and_sqrt_det_g_grid_universal_autodecoder(autoencoder_cfg,
     for chart in tqdm(charts):
         key, subkey = jax.random.split(key)
         supernode_idxs = jax.random.permutation(subkey, jnp.arange(chart.shape[0]))[:cfg.num_supernodes]
-        out, conditioning = model_apply_fn({"params": params}, chart[None, :, :], supernode_idxs[None, :], coords[None, :, :])
+        out, conditioning = model_apply_fn({"params": params}, chart[None, :, :], supernode_idxs[None, :], coords)
         conditionings.append(conditioning)
 
     conditionings = jnp.concatenate(conditionings, axis=0)

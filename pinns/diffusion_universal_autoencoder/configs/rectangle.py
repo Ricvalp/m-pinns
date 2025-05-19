@@ -11,6 +11,7 @@ def get_config():
     config.figure_path = "./figures/" + str(datetime.now().strftime("%Y%m%d-%H%M%S"))
 
     config.plot = False
+    config.num_supernodes = 128
 
     config.mode = "train"
     config.T = 4.0
@@ -25,13 +26,13 @@ def get_config():
     wandb.project = "PINN-Debug"
     wandb.name = "default"
     wandb.tag = None
-    wandb.log_every_steps = 100
+    wandb.log_every_steps = 10
 
     # Arch
     config.arch = arch = ml_collections.ConfigDict()
     arch.arch_name = "Mlp"
-    arch.num_layers = 4
-    arch.hidden_dim = 256
+    arch.num_layers = 2
+    arch.hidden_dim = 128
     arch.out_dim = 1
     arch.activation = "tanh"
 
@@ -39,10 +40,10 @@ def get_config():
     #     {"period": (jnp.pi,), "axis": (1,), "trainable": (False,)}
     # )
 
-    arch.fourier_emb = ml_collections.ConfigDict({"embed_scale": 1, "embed_dim": 256})
-    arch.reparam = ml_collections.ConfigDict(
-        {"type": "weight_fact", "mean": 0.5, "stddev": 0.1}
-    )
+    arch.fourier_emb = ml_collections.ConfigDict({"embed_scale": 2, "embed_dim": 128})
+    # arch.reparam = ml_collections.ConfigDict(
+    #     {"type": "weight_fact", "mean": 0.5, "stddev": 0.1}
+    # )
 
     # Optim
     config.optim = optim = ml_collections.ConfigDict()
@@ -51,41 +52,26 @@ def get_config():
     optim.beta1 = 0.9
     optim.beta2 = 0.999
     optim.eps = 1e-8
-    optim.learning_rate = 1e-5
+    optim.learning_rate = 1e-3
     optim.lbfgs_learning_rate = 0.00001
     optim.decay_rate = 0.9
     optim.decay_steps = 2000
 
     # Training
     config.training = training = ml_collections.ConfigDict()
-    training.max_steps = 500000
+    training.max_steps = 100000
     training.batch_size = 1024
     training.lbfgs_max_steps = 0
 
-    training.res_batches_path = (
-        "pinns/diffusion_single_gpu_autodecoder/rectangle/data/res_batches.npy"
-    )
-    training.boundary_batches_path = (
-        "pinns/diffusion_single_gpu_autodecoder/rectangle/data/boundary_batches.npy"
-    )
-    training.boundary_pairs_idxs_path = (
-        "pinns/diffusion_single_gpu_autodecoder/rectangle/data/boundary_pairs_idxs.npy"
-    )
-    training.ics_batches_path = (
-        "pinns/diffusion_single_gpu_autodecoder/rectangle/data/ics_batches.npy"
-    )
-    training.ics_idxs_path = (
-        "pinns/diffusion_single_gpu_autodecoder/rectangle/data/ics_idxs.npy"
-    )
 
     # Weighting
     config.weighting = weighting = ml_collections.ConfigDict()
     weighting.scheme = "grad_norm"
     weighting.init_weights = ml_collections.ConfigDict(
-        {"ics": 1.0, "res": 1.0, "bc": 1.0}
+        {"ics": 1.0, "res": 1.0}
     )
     weighting.momentum = 0.9
-    weighting.update_every_steps = 300000
+    weighting.update_every_steps = 1000
 
     # Logging
     config.logging = logging = ml_collections.ConfigDict()

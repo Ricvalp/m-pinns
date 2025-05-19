@@ -249,3 +249,130 @@ class MPINN:
 
     def create_losses(self):
         raise NotImplementedError("Subclasses should implement this!")
+
+
+
+def _create_train_state_single_chart(config):
+
+    arch = _create_arch(config.arch)
+    x = jnp.ones(config.input_dim)
+    params = arch.init(random.PRNGKey(config.seed), x)[
+        "params"
+    ]
+
+    tx = _create_optimizer(config.optim)
+    lbfgs_tx = optax.scale_by_lbfgs()
+
+    init_weights = dict(config.weighting.init_weights)
+
+    state = TrainState.create(
+        apply_fn=arch.apply,
+        params={"params": params},
+        tx=tx,
+        weights=init_weights,
+        momentum=config.weighting.momentum,
+        lbfgs_tx=lbfgs_tx,
+        lbfgs_opt_state=lbfgs_tx.init(params),
+        lbfgs_lr=config.optim.lbfgs_learning_rate,
+    )
+
+    return state
+
+
+class MPINNSingleChart:
+    def __init__(self, config):
+        self.config = config
+        self.state = _create_train_state_single_chart(config)
+        self.create_functions()
+        self.create_losses()
+
+    def u_net(self, params, *args):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def r_net(self, params, *args):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def losses(self, params, batch, *args):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def compute_diag_ntk(self, params, batch, *args):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def compute_l2_error(self, params, eval_x, eval_y, u_eval):
+        raise NotImplementedError("Subclasses should implement this!")
+
+    def loss(self, params, weights, batch, *args):
+        # Compute losses
+        losses = self.losses(params, batch, *args)
+        # Compute weighted loss
+        weighted_losses = tree_map(lambda x, y: x * y, losses, weights)
+        # Sum weighted losses
+        loss = tree_reduce(lambda x, y: x + y, weighted_losses)
+        return loss
+
+    def compute_weights(self, params, batch, *args):
+        if self.config.weighting.scheme == "grad_norm":
+            # Compute the gradient of each loss w.r.t. the parameters
+            grads = jacrev(self.losses)(params, batch, *args)
+
+            # Compute the grad norm of each loss
+            grad_norm_dict = {}
+            for key, value in grads.items():
+                flattened_grad = flatten_pytree(value)
+                grad_norm_dict[key] = jnp.linalg.norm(flattened_grad)
+
+            # Compute the mean of grad norms over all losses
+            mean_grad_norm = jnp.mean(jnp.stack(tree_leaves(grad_norm_dict)))
+            # Grad Norm Weighting
+            w = tree_map(lambda x: (mean_grad_norm / x), grad_norm_dict)
+
+        # elif self.config.weighting.scheme == "ntk":
+        #     # Compute the diagonal of the NTK of each loss
+        #     ntk = self.compute_diag_ntk(params, batch, *args)
+
+        #     # Compute the mean of the diagonal NTK corresponding to each loss
+        #     mean_ntk_dict = tree_map(lambda x: jnp.mean(x), ntk)
+
+        #     # Compute the average over all ntk means
+        #     mean_ntk = jnp.mean(jnp.stack(tree_leaves(mean_ntk_dict)))
+        #     # NTK Weighting
+        #     w = tree_map(lambda x: (mean_ntk / x), mean_ntk_dict)
+
+        return w
+
+    def create_functions(self):
+
+        def update_weights(state, batch, *args):
+            weights = self.compute_weights(state.params, batch, *args)
+            state = state.apply_weights(weights=weights)
+            return state
+
+        def step(state, batch, *args):
+            loss, grads = value_and_grad(self.loss)(
+                state.params, state.weights, batch, *args
+            )
+            state = state.apply_gradients(grads=grads)
+            return loss, state
+
+        def lbfgs_step(state, batch, *args):
+            loss, grads = value_and_grad(self.loss)(
+                state.params, state.weights, batch, *args
+            )
+            state = state.apply_lbfgs_gradients(grads=grads)
+            return loss, state
+
+        def eval(state, batch, eval_x=None, eval_y=None, u_eval=None, bcs_charts=None):
+            losses = self.losses(state.params, batch)
+            eval_loss = self.compute_l2_error(
+                state.params, eval_x, eval_y, u_eval, bcs_charts
+            )
+
+            return losses, eval_loss
+
+        self.update_weights = jax.jit(update_weights)
+        self.step = jax.jit(step)
+        self.lbfgs_step = jax.jit(lbfgs_step)
+        self.eval = jax.jit(eval)
+
+    def create_losses(self):
+        raise NotImplementedError("Subclasses should implement this!")

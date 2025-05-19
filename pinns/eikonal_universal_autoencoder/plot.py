@@ -415,6 +415,7 @@ def plot_correlation(mesh_sol, gt_sol, data=None, name=None, min_val=0.0, max_va
         y=gt_sol,
         s=pinn_size,
         ax=ax,
+        c=(0, 0, 1),
         label=r"$\mathcal{M}$-PINN",
         edgecolor="none",
     )

@@ -57,10 +57,11 @@ def evaluate(config: ml_collections.ConfigDict):
     charts_std = np.zeros((len(loaded_charts3d.keys()), ))
     for key in loaded_charts3d.keys():
         mu = loaded_charts3d[key].mean(axis=0)
-        std = loaded_charts3d[key].std()
         charts_mu[key] = mu
+        loaded_charts3d[key] = loaded_charts3d[key] - mu
+        std = loaded_charts3d[key].std()
         charts_std[key] = std
-        loaded_charts3d[key] = (loaded_charts3d[key] - mu) / std
+        loaded_charts3d[key] = loaded_charts3d[key] / std
 
     (
         inv_metric_tensor,

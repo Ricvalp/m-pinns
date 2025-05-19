@@ -5,12 +5,11 @@ from tqdm import tqdm
 from samplers import (
     UniformICSampler,
     UniformSampler,
-    UniformBoundarySampler,
 )
 
 from jaxpi.utils import load_config
 
-from pinns.diffusion_single_gpu_autodecoder.get_dataset import get_dataset
+from pinns.diffusion_universal_autoencoder.get_dataset import get_dataset
 
 import numpy as np
 

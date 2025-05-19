@@ -5,6 +5,20 @@ import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
 
 
+
+
+
+def plot_u0(x, y, ics, name=None):
+
+    fig, ax = plt.subplots(1, 1, figsize=(5, 5))
+    ax.scatter(x, y, s=3, c=ics)
+    plt.tight_layout()
+
+    if name is not None:
+        plt.savefig(name)
+    plt.show()
+
+
 def plot_domains(x, y, boundaries_x, boundaries_y, ics, name=None):
     num_plots = len(x)
     cols = 4  # You can adjust the number of columns based on your preference
@@ -43,8 +57,9 @@ def plot_domains(x, y, boundaries_x, boundaries_y, ics, name=None):
     plt.show()
 
 
-def plot_domains_with_metric(x, y, sqrt_det_g, d_params, name=None):
-    num_plots = len(x)
+def plot_domains_with_metric(x, y, sqrt_det_g, conditionings, name=None):
+    num_plots = min(len(conditionings), 16)
+    
     cols = 4
     rows = (num_plots + cols - 1) // cols
 
@@ -54,13 +69,12 @@ def plot_domains_with_metric(x, y, sqrt_det_g, d_params, name=None):
     elif cols == 1 or rows == 1:
         ax = ax.reshape(-1, cols)
 
-    decoder_params = [jax.tree_map(lambda x: x[i], d_params) for i in range(len(x))]
     for i in range(num_plots):
         row, col = divmod(i, cols)
 
         ax[row][col].set_title(f"Chart {i}")
-        color_values = sqrt_det_g(decoder_params[i], jnp.stack([x[i], y[i]], axis=1))
-        scatter = ax[row][col].scatter(x[i], y[i], s=3, c=color_values, cmap="viridis")
+        color_values = sqrt_det_g(conditionings[i], jnp.stack([x, y], axis=1))
+        scatter = ax[row][col].scatter(x, y, s=3, c=color_values, cmap="viridis")
         fig.colorbar(scatter, ax=ax[row][col], orientation="vertical")
 
     plt.tight_layout()

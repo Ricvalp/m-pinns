@@ -6,119 +6,89 @@ from jax import grad, jit, vmap
 from matplotlib import pyplot as plt
 
 from jaxpi.evaluator import BaseEvaluator
-from jaxpi.models import MPINN
+from jaxpi.models import MPINNSingleChart
 
 
-class DiffusionTime(MPINN):
+class DiffusionTime(MPINNSingleChart):
     def __init__(
-        self, config, inv_metric_tensor, sqrt_det_g, d_params, ics, boundaries
+        self, config, inv_metric_tensor, sqrt_det_g, conditionings, ts, ics 
     ):
-        super().__init__(config, num_charts=len(ics[-1]))
+        super().__init__(config)
 
         self.sqrt_det_g = sqrt_det_g
         self.inv_metric_tensor = inv_metric_tensor
-        self.d_params = d_params
+        self.conditionings = conditionings
+        self.ts = jnp.array(ts)
 
         self.x, self.y, self.ic = ics
-        self.boundaries_x, self.boundaries_y = boundaries
 
         self.u_pred_fn = vmap(self.u_net, (None, 0, 0, None))
 
     def create_losses(self):
-        @partial(vmap, in_axes=(0, 0, 0, 0))
+        # @partial(vmap, in_axes=(0, 0, 0, 0))
         def compute_ics_loss(params, x, y, ics):
             u_pred = vmap(self.u_net, (None, 0, 0, None))(params, x, y, 0.0)
             return jnp.mean((u_pred - ics) ** 2)
 
-        @partial(vmap, in_axes=(0, 0, 0))
-        def compute_res_loss(params, d_params, res_batches):
-            x, y, t = res_batches[:, 0], res_batches[:, 1], res_batches[:, 2]
-            r_pred = vmap(self.r_net, (None, None, 0, 0, 0))(params, d_params, x, y, t)
+        # @partial(vmap, in_axes=(0, 0))
+        def compute_res_loss(params, res_batches):
+            res_batches, ts_idxs = res_batches
+            x, y, t = res_batches[:, 0], res_batches[:, 1], self.ts[ts_idxs]
+            conditioning = self.conditionings[ts_idxs]
+            r_pred = vmap(self.r_net, (None, 0, 0, 0, 0))(params, conditioning, x, y, t)
             return jnp.mean(r_pred**2)
-
-        @partial(vmap, in_axes=(None, 0, 0))
-        @partial(vmap, in_axes=(None, 0, 0))
-        def compute_boundary_loss(params, boundary_batches, boundary_idxs):
-            xa, ya, t = (
-                boundary_batches[0, :, 0],
-                boundary_batches[0, :, 1],
-                boundary_batches[0, :, 2],
-            )
-            xb, yb, t = (
-                boundary_batches[1, :, 0],
-                boundary_batches[1, :, 1],
-                boundary_batches[1, :, 2],
-            )
-
-            a = boundary_idxs[0]
-            b = boundary_idxs[1]
-
-            boundary_pred_a = vmap(self.u_net, (None, 0, 0, 0))(
-                jax.tree_map(lambda x: x[a], params), xa, ya, t
-            )
-            boundary_pred_b = vmap(self.u_net, (None, 0, 0, 0))(
-                jax.tree_map(lambda x: x[b], params), xb, yb, t
-            )
-
-            return jnp.mean(0.25 * (boundary_pred_a - boundary_pred_b) ** 2)
 
         self.compute_ics_loss = compute_ics_loss
         self.compute_res_loss = compute_res_loss
-        self.compute_boundary_loss = compute_boundary_loss
 
     def u_net(self, params, x, y, t):
         z = jnp.stack([x, y, t])
         u = self.state.apply_fn(params, z)
         return u[0]
 
-    def g_inv_net(self, d_params, x, y):
+    def g_inv_net(self, conditioning, x, y):
         p = jnp.stack([x, y])[None, :]
-        return self.inv_metric_tensor(d_params, p)[0]
+        return self.inv_metric_tensor(conditioning, p)[0]
 
-    def sqrt_det_g_net(self, d_params, x, y):
+    def sqrt_det_g_net(self, conditioning, x, y):
         p = jnp.stack([x, y])[None, :]
-        return self.sqrt_det_g(d_params, p)[0]  # check this!
+        return self.sqrt_det_g(conditioning, p)[0]
 
-    def laplacian_net(self, params, d_params, x, y, t):
-        F1 = lambda x, y, t: self.sqrt_det_g_net(d_params, x, y) * (
-            self.g_inv_net(d_params, x, y)[0, 0]
+    def laplacian_net(self, params, conditioning, x, y, t):
+        F1 = lambda x, y, t: self.sqrt_det_g_net(conditioning, x, y) * (
+            self.g_inv_net(conditioning, x, y)[0, 0]
             * grad(self.u_net, argnums=1)(params, x, y, t)
-            + self.g_inv_net(d_params, x, y)[0, 1]
+            + self.g_inv_net(conditioning, x, y)[0, 1]
             * grad(self.u_net, argnums=2)(params, x, y, t)
         )
-        F2 = lambda x, y, t: self.sqrt_det_g_net(d_params, x, y) * (
-            self.g_inv_net(d_params, x, y)[1, 0]
+        F2 = lambda x, y, t: self.sqrt_det_g_net(conditioning, x, y) * (
+            self.g_inv_net(conditioning, x, y)[1, 0]
             * grad(self.u_net, argnums=1)(params, x, y, t)
-            + self.g_inv_net(d_params, x, y)[1, 1]
+            + self.g_inv_net(conditioning, x, y)[1, 1]
             * grad(self.u_net, argnums=2)(params, x, y, t)
         )
         F1_x = grad(F1, argnums=0)(x, y, t)
         F2_y = grad(F2, argnums=1)(x, y, t)
-        return (1.0 / self.sqrt_det_g_net(d_params, x, y)) * (F1_x + F2_y)
+        return (1.0 / self.sqrt_det_g_net(conditioning, x, y)) * (F1_x + F2_y)
 
-    def r_net(self, params, d_params, x, y, t):
+    def r_net(self, params, conditioning, x, y, t):
         u_t = grad(self.u_net, argnums=3)(params, x, y, t)
-        return u_t - 0.4 * self.laplacian_net(params, d_params, x, y, t)
+        return u_t - 0.1 * self.laplacian_net(params, conditioning, x, y, t)
 
     def losses(self, params, batch):
 
-        res_batches, boundary_batches, ics_batches = batch
+        res_batches, ics_batches = batch
 
         ics_input_points, ics_values = ics_batches
-        x, y = ics_input_points[:, :, 0], ics_input_points[:, :, 1]
+        x, y = ics_input_points[:, 0], ics_input_points[:, 1]
 
         ics_loss = self.compute_ics_loss(params, x, y, ics_values)
         ics_loss = jnp.mean(ics_loss)
 
-        res_loss = self.compute_res_loss(params, self.d_params, res_batches)
+        res_loss = self.compute_res_loss(params, res_batches)
         res_loss = jnp.mean(res_loss)
 
-        boundary_loss = self.compute_boundary_loss(
-            params, boundary_batches[0], boundary_batches[1]
-        )
-        boundary_loss = jnp.mean(boundary_loss)
-
-        loss_dict = {"ics": ics_loss, "res": res_loss, "bc": boundary_loss}
+        loss_dict = {"ics": ics_loss, "res": res_loss}
 
         return loss_dict
 
